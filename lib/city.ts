@@ -47,7 +47,7 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
   scene.add(new THREE.HemisphereLight(0xffffff, 0x8aa070, 0.75 * Math.PI));
   const sun = new THREE.DirectionalLight(0xffffff, 0.75 * Math.PI);
   sun.position.set(-40, 80, 30); sun.castShadow = true; sun.shadow.mapSize.set(4096, 4096);
-  Object.assign(sun.shadow.camera, { left: -150, right: 150, top: 150, bottom: -150, far: 400 });
+  Object.assign(sun.shadow.camera, { left: -260, right: 260, top: 260, bottom: -260, far: 600 });
   scene.add(sun);
 
   const M = (c: number) => new THREE.MeshLambertMaterial({ color: c });
@@ -88,8 +88,15 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
     const g = new THREE.Mesh(new THREE.ShapeGeometry(s), mats.water); g.rotation.x = -Math.PI / 2; g.position.y = 0.05; g.receiveShadow = true; scene.add(g);
   };
   const G = (lon: number, lat: number) => { const p = geo(lon, lat); return [p.x, p.z]; };
+  let coastPts: number[][] = [];
   const riverPts = HUANGPU.map(([a, b]) => G(a, b)), creekPts = SUZHOU_CREEK.map(([a, b]) => G(a, b));
   ribbon(riverPts, 6); ribbon(creekPts, 2.2);
+  // 东海：沿真实海岸线（简化）往外铺海面
+  { const coast = [[121.62, 31.45], [121.76, 31.32], [121.86, 31.2], [121.905, 31.1], [121.965, 31.0], [121.985, 30.9], [121.95, 30.84], [121.84, 30.83], [121.6, 30.81], [121.2, 30.76], [120.9, 30.72]].map(([a, b]) => G(a, b));
+    const sh = new THREE.Shape(); sh.moveTo(coast[0][0], -(coast[0][1])); coast.slice(1).forEach((p) => sh.lineTo(p[0], -p[1]));
+    [[-60, 260], [400, 260], [400, -200], [coast[0][0] + 40, -200]].forEach(([x, z]) => sh.lineTo(x, -z));
+    const sea = new THREE.Mesh(new THREE.ShapeGeometry(sh), M(0x4f9fc4)); sea.rotation.x = -Math.PI / 2; sea.position.y = 0.04; sea.receiveShadow = true; scene.add(sea);
+    coastPts = coast; }
 
   const road = (x1: number, z1: number, x2: number, z2: number, w = 1.6) => {
     const l = Math.hypot(x2 - x1, z2 - z1); const g = new THREE.Mesh(new THREE.BoxGeometry(l + w, 0.08, w), mats.road);
@@ -110,6 +117,9 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
     { w: 1.6, pts: [[121.522, 31.258], [121.522, 31.22], [121.515, 31.18]] }, // 杨高路
     { w: 1.6, pts: [[121.478, 31.19], [121.505, 31.185], [121.52, 31.18]] }, // 世博大道
     { w: 2, pts: [[121.435, 31.193], [121.38, 31.15], [121.30, 31.08], [121.228, 31.04]] }, // 沪闵路—G60 去松江
+    { w: 2, pts: [[121.596, 31.204], [121.70, 31.17], [121.795, 31.145]] }, // 迎宾高速去浦东机场
+    { w: 2, pts: [[121.596, 31.204], [121.68, 31.10], [121.80, 30.98], [121.915, 30.91]] }, // S2 沪芦高速去临港
+    { w: 1.6, pts: [[121.344, 31.1955], [121.33, 31.197]] }, // 虹桥枢纽连接
   ];
   ROADS.forEach((r) => { const q = r.pts.map(([a, b]) => G(a, b)); for (let i = 1; i < q.length; i++) road(q[i - 1][0], q[i - 1][1], q[i][0], q[i][1], r.w); });
   const segs = ROADS.flatMap((r) => r.pts.map(([a, b]) => G(a, b)).slice(1).map((q, i, arr) => [i ? arr[i - 1] : G(...r.pts[0]), q]));
@@ -125,6 +135,8 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
   bridgeAt(121.502, 31.205); bridgeAt(121.4855, 31.186); bridgeAt(121.535, 31.256);
 
   const P = PLACES;
+  let maglev: { a: number[]; b: number[]; ang: number } | null = null;
+  const mills: THREE.Group[] = [];
   const LM = { pearl: geo(121.4998, 31.2397), jinmao: { x: 33, z: -11.5 }, swfc: { x: 37, z: -10.5 }, tower: { x: 40.5, z: -7.5 }, rps: geo(121.4737, 31.2304) };
   const shiftSince = (m0: number, dx: number, dz: number) => { for (let i = m0; i < scene.children.length; i++) { scene.children[i].position.x += dx; scene.children[i].position.z += dz; } };
 
@@ -156,6 +168,38 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
     if (h % 2) box(0.4, 0.9, 0.4, mats.brick, 0.8, 2.6, -0.6, g);
     const { x, z } = plotPos(id); g.position.set(x, 0.14, z); scene.add(g); return g;
   };
+
+  /* ---- 机场和滴水湖 ---- */
+  // 磁悬浮：龙阳路 → 浦东机场，白色高架轨道
+  { const [a, b] = [G(121.557, 31.204), G(121.80, 31.148)]; const l = Math.hypot(b[0] - a[0], b[1] - a[1]); const ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
+    const track = new THREE.Mesh(new THREE.BoxGeometry(l, 0.3, 0.9), mats.white); track.position.set((a[0] + b[0]) / 2, 1.6, (a[1] + b[1]) / 2); track.rotation.y = -ang; track.castShadow = true; scene.add(track);
+    for (let i = 1; i < l / 5; i++) cyl(0.2, 0.2, 1.5, mats.white, a[0] + Math.cos(ang) * i * 5, 0, a[1] + Math.sin(ang) * i * 5, 6);
+    maglev = { a, b, ang }; }
+  const airport = (x: number, z: number, big: boolean) => {
+    plot(x, z, big ? 26 : 18, big ? 34 : 26, M(0xb7bdb6));
+    [-1, 1].forEach((sgn) => { const rw = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.06, big ? 30 : 22), mats.dk); rw.position.set(x + sgn * (big ? 9 : 6), 0.16, z); scene.add(rw);
+      for (let i = -5; i <= 5; i++) { const m = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.07, 1), mats.white); m.position.set(x + sgn * (big ? 9 : 6), 0.17, z + i * (big ? 2.6 : 1.9)); scene.add(m); } });
+    // 航站楼：弧形屋顶的长条
+    const tw = big ? 10 : 7; box(tw, 1.8, 4, mats.white, x, 0, z - 2); const roof = cyl(2.2, 2.2, tw, mats.glass2, x, 1.8, z - 2, 16); roof.rotation.z = Math.PI / 2; roof.position.y = 1.8; roof.scale.set(0.35, 1, 1);
+    if (big) { box(tw, 1.8, 4, mats.white, x, 0, z + 6); const r2 = cyl(2.2, 2.2, tw, mats.glass2, x, 1.8, z + 6, 16); r2.rotation.z = Math.PI / 2; r2.position.y = 1.8; r2.scale.set(0.35, 1, 1); }
+    cyl(0.5, 0.6, 6, mats.white, x + tw / 2 + 2, 0, z + 2, 8); box(1.6, 1, 1.6, mats.glass, x + tw / 2 + 2, 6, z + 2); // 塔台
+  };
+  airport(P.pvg.x, P.pvg.z, true);
+  airport(P.sha.x + 1, P.sha.z, false); // 跑道在虹桥火车站东边
+  // 飞机：两架绕着机场起降
+  const planes: { g: THREE.Group; cx: number; cz: number; r: number; ph: number }[] = [];
+  [[P.pvg.x, P.pvg.z, 22], [P.sha.x + 1, P.sha.z, 16]].forEach(([cx, cz, r], i) => {
+    const g = new THREE.Group(); box(0.6, 0.6, 3.6, mats.white, 0, 0, 0, g); box(4.2, 0.12, 0.9, mats.white, 0, 0.25, 0.2, g); box(1.6, 0.1, 0.5, mats.white, 0, 0.3, -1.6, g); box(0.1, 0.8, 0.6, mats.red, 0, 0.5, -1.6, g);
+    scene.add(g); planes.push({ g, cx, cz, r, ph: i * 2 });
+  });
+  // 滴水湖：同心圆的湖、湖心岛、风车
+  { const { x, z } = P.dsh;
+    const ring = (r: number, m: THREE.Material, y: number) => { const c = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.1, 40), m); c.position.set(x, y, z); c.receiveShadow = true; scene.add(c); };
+    ring(16, mats.park, 0.06); ring(13, mats.stone, 0.08); ring(12, mats.water, 0.1); ring(3, mats.park, 0.14);
+    for (let i = 0; i < 24; i++) { const a = (i / 24) * Math.PI * 2; tree(x + Math.cos(a) * 14.5, z + Math.sin(a) * 14.5, 0.8); }
+    for (let i = 0; i < 4; i++) tree(x - 1 + (i % 2) * 2, z - 1 + Math.floor(i / 2) * 2, 0.7);
+    for (let i = 0; i < 3; i++) { const wx = x + 22 + i * 4, wz = z - 6 + i * 5; cyl(0.2, 0.3, 7, mats.white, wx, 0, wz, 8); const hub = new THREE.Group(); [0, 1, 2].forEach((k) => { const bl = new THREE.Mesh(new THREE.BoxGeometry(0.25, 3, 0.1), mats.white); bl.position.y = 1.5; const arm = new THREE.Group(); arm.add(bl); arm.rotation.z = (k * Math.PI * 2) / 3; hub.add(arm); }); hub.position.set(wx, 7, wz + 0.3); scene.add(hub); mills.push(hub); }
+  }
 
   /* ---- 新地标 ---- */
   { const m0 = scene.children.length;
@@ -288,6 +332,7 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
   const FERRY = { x: P.ferry.x, z: P.ferry.z };
   box(3, 0.4, 2, mats.wood, FERRY.x - 2.5, 0, FERRY.z); box(1.5, 1.2, 1.2, mats.white, FERRY.x - 2.5, 0.4, FERRY.z);
   const ferry = new THREE.Group(); box(3, 0.6, 1.4, mats.white, 0, 0, 0, ferry); box(1.6, 0.8, 1.1, mats.yellow, 0, 0.6, 0, ferry); ferry.position.set(FERRY.x, 0.1, FERRY.z); ferry.rotation.y = Math.PI / 2; scene.add(ferry);
+  const mag = new THREE.Group(); box(5, 0.7, 0.8, mats.white, 0, 0, 0, mag); box(5.02, 0.12, 0.82, mats.glass2, 0, 0.35, 0, mag); if (maglev) mag.rotation.y = -maglev.ang; scene.add(mag);
   // 高铁从虹桥往外开：沿延安路高架的第一段跑
   const [tA, tB] = [G(121.32, 31.197), G(121.40, 31.206)];
   const train = new THREE.Group(); for (let i = 0; i < 4; i++) box(2.6, 0.9, 1, mats.white, i * 2.8, 0, 0, train); box(11, 0.08, 1.02, mats.red, 4.2, 0.55, 0, train); train.rotation.y = -Math.atan2(tB[1] - tA[1], tB[0] - tA[0]); scene.add(train);
@@ -297,6 +342,8 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
   const free = (x: number, z: number) => {
     for (const k in PLACES) { const p = PLACES[k as PlaceId]; if (Math.hypot(p.x - x, p.z - z) < 9) return false; }
     if (Math.hypot(x - SUBURB.x, z - SUBURB.z - 10) < 32) return false;
+    if (Math.hypot(x - P.pvg.x, z - P.pvg.z) < 24 || Math.hypot(x - P.sha.x - 1, z - P.sha.z) < 17 || Math.hypot(x - P.dsh.x, z - P.dsh.z) < 32) return false;
+    if (coastPts.length && x > 120) { let cx = -1e9; for (let i = 1; i < coastPts.length; i++) { const [a, b] = [coastPts[i - 1], coastPts[i]]; if ((a[1] - z) * (b[1] - z) <= 0 && a[1] !== b[1]) cx = Math.max(cx, a[0] + ((z - a[1]) / (b[1] - a[1])) * (b[0] - a[0])); } if (cx > -1e9 && x > cx - 4) return false; }
     if (near(riverPts, x, z, 5.5) || near(creekPts, x, z, 2.6)) return false;
     if (segs.some(([a, b]) => segDist(x, z, a, b) < 2.2)) return false;
     return true;
@@ -309,14 +356,15 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
     const east = x > riverXAt(z) && z > -40, h = rnd(1.5, 5) + Math.max(0, 40 - r) / (east ? 3 : 7);
     box(rnd(1.8, 3), h, rnd(1.8, 3), east ? (rand() < 0.5 ? mats.glass : mats.white) : rand() < 0.3 ? mats.white : mats.grey, x, 0, z);
   }
-  for (let i = 0; i < 260; i++) { const x = rnd(-140, 110), z = rnd(-95, 140); if (free(x, z)) tree(x, z, rnd(0.6, 1)); }
+  for (let i = 0; i < 380; i++) { const x = rnd(-140, 230), z = rnd(-95, 200); if (free(x, z)) tree(x, z, rnd(0.6, 1)); }
+  for (let i = 0; i < 90; i++) { const x = rnd(100, 215), z = rnd(0, 180); if (free(x, z)) box(rnd(1.8, 3), rnd(1.5, 4), rnd(1.8, 3), rand() < 0.5 ? mats.white : mats.grey, x, 0, z); }
   const cars: THREE.Mesh[] = [];
   const longSegs = segs.filter(([a, b]) => Math.hypot(b[0] - a[0], b[1] - a[1]) > 15);
   for (let i = 0; i < 18; i++) { const c = box(1.2, 0.6, 0.7, [mats.red, mats.yellow, mats.white, mats.glass2][i % 4], 0, 0.08, 0); const sg = longSegs[i % longSegs.length]; c.userData = { a: sg[0], b: sg[1], t: rand(), sp: rnd(0.0015, 0.004) * (i % 2 ? 1 : -1) }; c.rotation.y = -Math.atan2(sg[1][1] - sg[0][1], sg[1][0] - sg[0][0]); cars.push(c); }
 
   /* ---- 覆盖层 ---- */
   const labels: HTMLElement[] = [];
-  ([["黄浦江", 121.4985, 31.214, ""], ["苏州河", 121.43, 31.2405, ""], ["浦 西", 121.455, 31.253, "land"], ["浦 东", 121.535, 31.21, "land"], ["静 安", 121.44, 31.232, "land"], ["徐 汇", 121.43, 31.178, "land"], ["杨 浦", 121.53, 31.295, "land"], ["闵 行", 121.37, 31.14, "land"], ["张 江", 121.6, 31.19, "land"], ["松 江", 121.2, 31.06, "land"]] as const).map(([t, lon, lat, c]) => [t, G(lon, lat)[0], G(lon, lat)[1], c] as const).forEach(([t, x, z, c]) => {
+  ([["黄浦江", 121.4985, 31.214, ""], ["苏州河", 121.43, 31.2405, ""], ["浦 西", 121.455, 31.253, "land"], ["浦 东", 121.535, 31.21, "land"], ["静 安", 121.44, 31.232, "land"], ["徐 汇", 121.43, 31.178, "land"], ["杨 浦", 121.53, 31.295, "land"], ["闵 行", 121.37, 31.14, "land"], ["张 江", 121.6, 31.19, "land"], ["松 江", 121.2, 31.06, "land"], ["临 港", 121.9, 30.95, "land"], ["东 海", 122.05, 31.05, ""], ["长 宁", 121.40, 31.215, "land"]] as const).map(([t, lon, lat, c]) => [t, G(lon, lat)[0], G(lon, lat)[1], c] as const).forEach(([t, x, z, c]) => {
     const d = document.createElement("div"); d.className = "lbl " + c; d.textContent = t; d.dataset.x = String(x); d.dataset.z = String(z); overlay.appendChild(d); labels.push(d);
   });
   const pins = {} as Record<PlaceId, HTMLButtonElement>;
@@ -356,7 +404,7 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
   // 每个地点前面一块空地，人排成两行站
   // 每个地点前面一块空地（相对地点的偏移），人排成两行站
   const SPOT_OFF: Partial<Record<PlaceId, [number, number]>> = { home: [0, 5.6], rmgy: [2, -1], metro: [0, 2.4], bund: [-2, 3], chp: [-1, 5], tzf: [0, 0.1], wk: [3, 1], ykl: [0, 2.2], ljz: [3, 9], ferry: [-4.5, 2.2],
-    sjxc: [4, -3.5], njl: [0, 1], jas: [0, 5.5], xtd: [0, 3], xjh: [4, 5], hq: [0, 6.5], wjc: [2, 6.5], expo: [4, 5], sjgy: [-4, 9], zj: [-2, 6], gongfang: [0, 5.5], jiangjing: [0, 4.5], yangfang: [0, 4.5] };
+    sjxc: [4, -3.5], pvg: [0, -8], sha: [1, -8], dsh: [0, -17], njl: [0, 1], jas: [0, 5.5], xtd: [0, 3], xjh: [4, 5], hq: [0, 6.5], wjc: [2, 6.5], expo: [4, 5], sjgy: [-4, 9], zj: [-2, 6], gongfang: [0, 5.5], jiangjing: [0, 4.5], yangfang: [0, 4.5] };
   const SPOTS = Object.fromEntries((Object.keys(PLACES) as PlaceId[]).map((k) => [k, [PLACES[k].x + (SPOT_OFF[k]?.[0] ?? 0), PLACES[k].z + (SPOT_OFF[k]?.[1] ?? 3)]])) as Record<PlaceId, [number, number]>;
   const slotPos = (at: PlaceId, slot: number) => { const [x, z] = SPOTS[at]; const col = slot % 6, row = Math.floor(slot / 6) % 2; return new THREE.Vector3(x + (col - 2.5) * 1.3 + row * 0.6, 0, z + row * 1.2); };
   const makeFig = (o: Other, slot: number): Fig => {
@@ -375,7 +423,7 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
   canvas.addEventListener("pointermove", (e) => {
     if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y; const s = (cam.right - cam.left) / root.clientWidth;
     target.copy(drag.t).addScaledVector(new THREE.Vector3(1, 0, -1).normalize(), -dx * s).addScaledVector(new THREE.Vector3(1, 0, 1).normalize(), -dy * s * 1.35);
-    target.x = Math.max(-150, Math.min(110, target.x)); target.z = Math.max(-95, Math.min(145, target.z)); placeCam();
+    target.x = Math.max(-150, Math.min(230, target.x)); target.z = Math.max(-95, Math.min(200, target.z)); placeCam();
   });
   canvas.addEventListener("pointerup", () => (drag = null));
   const setZoom = (z: number) => { zoom = Math.max(0.6, Math.min(3, z)); resize(); };
@@ -398,6 +446,9 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
     const dt = Math.min(50, t - t0) / 16; t0 = t;
     if (!reduce) {
       ferry.position.x = FERRY.x + Math.sin(t / 2600) * 2.4;
+      planes.forEach((p) => { const a = t / 6000 + p.ph; p.g.position.set(p.cx + Math.cos(a) * p.r, 4 + Math.sin(a * 2) * 1.5, p.cz + Math.sin(a) * p.r * 1.3); p.g.rotation.y = -a; });
+      mills.forEach((m, i) => (m.rotation.z = t / 700 + i));
+      if (maglev) { const k = (t / 5000) % 1; mag.position.set(maglev.a[0] + (maglev.b[0] - maglev.a[0]) * k, 1.9, maglev.a[1] + (maglev.b[1] - maglev.a[1]) * k); }
       const tt = (t / 9000) % 1; train.position.set(tA[0] + (tB[0] - tA[0]) * tt, 0.1, tA[1] + (tB[1] - tA[1]) * tt);
       cars.forEach((c) => { const u = c.userData; u.t = (u.t + u.sp * dt + 1) % 1; c.position.set(u.a[0] + (u.b[0] - u.a[0]) * u.t, 0.38, u.a[1] + (u.b[1] - u.a[1]) * u.t); });
     }

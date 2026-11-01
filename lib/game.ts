@@ -1,7 +1,7 @@
 // 纯游戏规则：不依赖界面，前后端都能用。
 import { geo } from "./geo";
 const at = (lon: number, lat: number) => geo(lon, lat);
-export type PlaceId = "home" | "rmgy" | "metro" | "bund" | "chp" | "tzf" | "wk" | "ykl" | "ljz" | "ferry" | "njl" | "jas" | "xtd" | "xjh" | "hq" | "wjc" | "expo" | "sjgy" | "zj" | "gongfang" | "jiangjing" | "yangfang" | "sjxc";
+export type PlaceId = "home" | "rmgy" | "metro" | "bund" | "chp" | "tzf" | "wk" | "ykl" | "ljz" | "ferry" | "njl" | "jas" | "xtd" | "xjh" | "hq" | "wjc" | "expo" | "sjgy" | "zj" | "gongfang" | "jiangjing" | "yangfang" | "sjxc" | "pvg" | "sha" | "dsh";
 export type JobId = "coder" | "barista" | "designer" | "engineer";
 export type Stats = { energy: number; hunger: number; fun: number; social: number };
 export type State = Stats & {
@@ -55,6 +55,9 @@ export const PLACES: Record<PlaceId, { name: string; ic: string; x: number; z: n
   jiangjing: { name: "陆家嘴江景公寓", ic: "🌇", ...at(121.513, 31.244), h: 16, sub: "浦东 · 房租¥12000/月", desc: "三十几楼，落地窗正对黄浦江和外滩。" },
   yangfang: { name: "徐汇老洋房", ic: "🏡", ...at(121.448, 31.2125), h: 6, sub: "徐汇 · 房租¥20000/月", desc: "梧桐树下的独栋老洋房，木地板，小花园。" },
   sjxc: { name: "松江新城售楼处", ic: "🏘️", ...at(121.228, 31.0325), h: 6, sub: "松江 · 24 块地出售", desc: "地铁9号线终点附近的新城，湖边一排排待建的地块，买下一块就有自己的家。" },
+  pvg: { name: "浦东机场", ic: "✈️", ...at(121.805, 31.143), h: 6, sub: "浦东 · 国际航班", desc: "两座航站楼像展开的翅膀，磁悬浮七分多钟从龙阳路飞过来。" },
+  sha: { name: "虹桥机场", ic: "🛫", ...at(121.356, 31.1955), h: 5, sub: "长宁 · 国内航班", desc: "离市区近，跑道另一头就是虹桥火车站，飞机和高铁背靠背。" },
+  dsh: { name: "滴水湖", ic: "🌊", ...at(121.930, 30.905), h: 4, sub: "临港 · 东海边", desc: "一圈圈同心圆的人工湖，湖边风车慢慢转，再往东就是大海。" },
   ferry: { name: "东金线轮渡", ic: "⛴️", ...at(121.4955, 31.2325), h: 4, sub: "两块钱过江", desc: "坐轮渡过黄浦江，比地铁慢，但风景好。" },
 };
 
@@ -69,7 +72,7 @@ export const NPCS: Record<string, { name: string; line: string }> = {
   mama: { name: "相亲角李妈妈", line: "“侬有房伐？有户口伐？”" },
 };
 
-type Act = [label: string, mins: number, cost: number, eff: Partial<Stats>, kind?: "work" | "interview" | "rent" | "movein" | null, npc?: string];
+type Act = [label: string, mins: number, cost: number, eff: Partial<Stats>, kind?: "work" | "interview" | "rent" | "movein" | "trip" | null, npc?: string];
 const HOME_ACTS: Act[] = [["困觉（睡一觉）", 480, 0, { energy: 70, hunger: -25 }], ["刷手机", 60, 0, { fun: 15, energy: -5 }], ["外卖点一份炸猪排", 40, 38, { hunger: 45 }]];
 export const ACTS: Record<PlaceId, Act[]> = {
   gongfang: HOME_ACTS, jiangjing: HOME_ACTS, yangfang: HOME_ACTS, sjxc: HOME_ACTS,
@@ -83,6 +86,9 @@ export const ACTS: Record<PlaceId, Act[]> = {
   rmgy: [["看相亲角的简历", 45, 0, { fun: 12 }, null, "mama"], ["被阿姨盘问家底", 30, 0, { fun: -10, social: 12 }, null, "mama"]],
   ykl: [["路边喝精酿", 120, 60, { fun: 30, energy: -15, social: 12 }, null, "max"], ["蹦迪到天亮", 300, 180, { fun: 40, energy: -45, social: 20 }]],
   ferry: [["坐轮渡吹江风", 30, 2, { fun: 14 }]],
+  pvg: [["飞东京玩三天", 4320, 3200, { fun: 60, energy: -25, social: 10 }], ["飞巴厘岛躺五天", 7200, 5800, { fun: 80, energy: 20, hunger: -10 }], ["去接机，顺便吃碗面", 90, 35, { hunger: 30, social: 8 }]],
+  sha: [["飞三亚度假两天", 2880, 1900, { fun: 45, energy: 10 }], ["飞北京出差一天", 1440, 1200, { energy: -30, fun: -5 }, "trip"], ["隔着玻璃看飞机起降", 40, 0, { fun: 10 }]],
+  dsh: [["环湖骑行", 120, 30, { fun: 25, energy: -15 }], ["海边看日出", 90, 0, { fun: 22, energy: -5 }], ["吃一顿海鲜大排档", 80, 160, { hunger: 60, fun: 15 }], ["逛海昌海洋公园", 240, 290, { fun: 40, energy: -18 }]],
   njl: [["逛第一百货", 90, 60, { fun: 18, energy: -8 }], ["买沈大成青团", 20, 18, { hunger: 22, fun: 4 }], ["和扫地阿姨聊两句", 15, 0, { social: 8 }, null, "sao"]],
   jas: [["进寺烧香许愿", 45, 10, { fun: 12, energy: 3 }, null, "shifu"], ["逛久光百货", 90, 80, { fun: 20, energy: -10 }]],
   xtd: [["露台上喝一杯", 120, 88, { fun: 28, social: 10, energy: -10 }], ["吃一顿本帮菜", 70, 120, { hunger: 60, fun: 12 }], ["看一场脱口秀", 120, 150, { fun: 35, social: 8 }]],
@@ -153,7 +159,7 @@ export function mood(s: State) { const v = (s.energy + s.hunger + s.fun + s.soci
 export const crossRiver = (a: PlaceId, b: PlaceId) => (PLACES[a].x > 8) !== (PLACES[b].x > 8);
 export function trip(a: PlaceId, b: PlaceId) {
   const d = Math.hypot(PLACES[a].x - PLACES[b].x, PLACES[a].z - PLACES[b].z);
-  return { cost: (crossRiver(a, b) ? 5 : 3) + (d > 60 ? 3 : d > 35 ? 1 : 0), mins: Math.round(15 + d * 1.1) };
+  return { cost: (crossRiver(a, b) ? 5 : 3) + (d > 150 ? 12 : d > 60 ? 3 : d > 35 ? 1 : 0), mins: Math.round(15 + Math.min(d, 150) * 1.1 + Math.max(0, d - 150) * 0.5) };
 }
 
 export type Result = { state: State; toast?: string; label?: string };
@@ -211,6 +217,7 @@ export function act(prev: State, i: number): Result {
     check(s);
     return { state: s, toast, label };
   }
+  if (kind === "trip") { s.money += 3000; log(s, "出差回来，公司报销还发了¥3000补贴。"); }
   s.money -= cost; apply(s, eff); advance(s, mins);
   if (label.startsWith("困觉")) apply(s, HOMES[homeOf(s)].perk);
   if (npc) {
