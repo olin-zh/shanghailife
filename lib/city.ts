@@ -440,7 +440,7 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
   const boats: B[] = []; const pickables: THREE.Object3D[] = [];
   const hullColors = [0xf3f1ea, 0xe9c44c, 0x2f86c9, 0xc4472f, 0x4aa65a];
   for (let i = 0; i < BOAT_COUNT; i++) {
-    const big = i < HUANGPU_BOATS, path = big ? hpPath : ckPath, sc = big ? 1 : 0.6;
+    const big = i < HUANGPU_BOATS, path = big ? hpPath : ckPath, sc = big ? 1.6 : 0.9;
     const hull = new THREE.Group();
     box(2.8 * sc, 0.5 * sc, 1.1 * sc, M(hullColors[i % hullColors.length]), 0, 0, 0, hull); box(1.4 * sc, 0.5 * sc, 0.9 * sc, mats.white, -0.2 * sc, 0.5 * sc, 0, hull);
     const board = new THREE.Group(); const bw = 2.6 * sc, bh = 1.3 * sc;
@@ -450,7 +450,7 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
     scene.add(hull); scene.add(board);
     hull.traverse((o) => (o.userData.boatId = i)); board.traverse((o) => (o.userData.boatId = i)); pickables.push(hull, board);
     const dir = big ? (i % 2 ? 1 : -1) : i % 2 ? 1 : -1;
-    boats.push({ hull, board, face, path, d: ((i * 0.6180339) % 1) * path.len, dir, lane: big ? dir * 1.5 : 0, sp: (big ? 0.012 : 0.008) * (0.7 + ((i * 37) % 10) / 20), ver: 0, tex: null });
+    boats.push({ hull, board, face, path, d: ((big ? i / HUANGPU_BOATS : (i - HUANGPU_BOATS) / (BOAT_COUNT - HUANGPU_BOATS)) + 0.05) * path.len, dir, lane: big ? dir * 1.5 : 0, sp: (big ? 0.012 : 0.008) * (0.7 + ((i * 37) % 10) / 20), ver: 0, tex: null });
   }
   const moveBoats = (dt: number) => {
     boats.forEach((b) => {
@@ -458,7 +458,7 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
       if (b.d > b.path.len) { b.d = b.path.len; b.dir = -1; } if (b.d < 0) { b.d = 0; b.dir = 1; }
       const p = along(b.path, b.d), lane = b.path === hpPath ? b.dir * 1.5 : 0;
       b.hull.position.set(p.x + p.nx * lane, 0.1, p.z + p.nz * lane); b.hull.rotation.y = -p.ang + (b.dir < 0 ? Math.PI : 0);
-      b.board.position.set(b.hull.position.x, b.path === hpPath ? 2.4 : 1.5, b.hull.position.z); b.board.quaternion.copy(cam.quaternion);
+      b.board.position.set(b.hull.position.x, b.path === hpPath ? 3.6 : 2.1, b.hull.position.z); b.board.quaternion.copy(cam.quaternion);
     });
   };
   const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();

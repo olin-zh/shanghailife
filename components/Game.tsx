@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createCity, type City, type Other } from "../lib/city";
 import { plotName, type Plot } from "../lib/plots";
-import { AD_DAYS, AD_PRICE, boatName, type Boat } from "../lib/boats";
+import { AD_DAYS, AD_PRICE, BOAT_COUNT, boatName, type Boat } from "../lib/boats";
 import { actsAt, homeOf, isHome, HOMES, GIFT_AMOUNTS, JOBS, NPCS, PLACES, act, clock, coopable, isState, mood, newGame, travel, trip, type JobId, type PlaceId, type State } from "../lib/game";
 
 type User = { id: string; email: string; name: string };
@@ -86,7 +86,7 @@ export default function Game() {
   useEffect(() => { city.current?.setBoats(boats); }, [boats]);
   // 分享链接 …/#boat-12 直接打开那艘船的广告
   useEffect(() => {
-    const open = () => { const m = location.hash.match(/^#boat-(\d+)$/); if (m) setBoatSel(Math.min(149, Number(m[1]) - 1)); };
+    const open = () => { const m = location.hash.match(/^#boat-(\d+)$/); if (m) setBoatSel(Math.max(0, Math.min(BOAT_COUNT - 1, Number(m[1]) - 1))); };
     open(); addEventListener("hashchange", open); return () => removeEventListener("hashchange", open);
   }, []);
 

@@ -1,6 +1,6 @@
 // 游船广告：规则写在这里，前后端共用。
-export const BOAT_COUNT = 150;
-export const HUANGPU_BOATS = 120; // 0–119 在黄浦江，120–149 在苏州河
+export const BOAT_COUNT = 12;
+export const HUANGPU_BOATS = 10; // 0–9 在黄浦江，10–11 在苏州河
 export const AD_PRICE = 2000; // 游戏币
 export const AD_DAYS = 7; // 真实天数
 export const AD_MAX_PER_PLAYER = 3;
