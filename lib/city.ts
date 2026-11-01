@@ -5,6 +5,7 @@ import { PLOT_COUNT, SUBURB, plotName, plotPos, type Plot } from "./plots";
 import { geo, HUANGPU, SUZHOU_CREEK } from "./geo";
 import { BOAT_COUNT, HUANGPU_BOATS, type Boat } from "./boats";
 import { KINDS, SLOTS, type Shop } from "./shops";
+import { EKINDS, ESTATE_COUNT, QIANTAN, estatePos, type Estate } from "./estates";
 
 export type Other = { id: string; name: string; at: PlaceId; color: number; act?: string };
 export type City = {
@@ -14,6 +15,7 @@ export type City = {
   setPlots(list: Plot[]): void;
   setBoats(list: Boat[]): void;
   setShops(list: Shop[]): void;
+  setEstates(list: Estate[]): void;
   setPlayers(list: Other[]): void;
   bubble(id: string, text: string): void;
   focus(id: PlaceId): void;
@@ -346,7 +348,7 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
   const free = (x: number, z: number) => {
     for (const k in PLACES) { const p = PLACES[k as PlaceId]; if (Math.hypot(p.x - x, p.z - z) < 9) return false; }
     if (Math.hypot(x - SUBURB.x, z - SUBURB.z - 10) < 32) return false;
-    if (Math.hypot(x - P.pvg.x, z - P.pvg.z) < 24 || Math.hypot(x - P.sha.x - 1, z - P.sha.z) < 17 || Math.hypot(x - P.dsh.x, z - P.dsh.z) < 32) return false;
+    if (Math.hypot(x - P.pvg.x, z - P.pvg.z) < 24 || Math.hypot(x - P.sha.x - 1, z - P.sha.z) < 17 || Math.hypot(x - P.dsh.x, z - P.dsh.z) < 32 || (Math.abs(x - QIANTAN.x) < 17 && z > QIANTAN.z - 2 && z < QIANTAN.z + 27)) return false;
     if (coastPts.length && x > 120) { let cx = -1e9; for (let i = 1; i < coastPts.length; i++) { const [a, b] = [coastPts[i - 1], coastPts[i]]; if ((a[1] - z) * (b[1] - z) <= 0 && a[1] !== b[1]) cx = Math.max(cx, a[0] + ((z - a[1]) / (b[1] - a[1])) * (b[0] - a[0])); } if (cx > -1e9 && x > cx - 4) return false; }
     if (near(riverPts, x, z, 5.5) || near(creekPts, x, z, 2.6)) return false;
     if (segs.some(([a, b]) => segDist(x, z, a, b) < 2.2)) return false;
@@ -477,6 +479,27 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
     return { x, z, tag, obj: null as THREE.Group | null, key: "" };
   });
 
+  /* ---- 前滩商业地块：12 块，盖好的店顶上挂招牌 ---- */
+  { const { x, z } = QIANTAN;
+    road(x - 14, z + 1.5, x + 14, z + 1.5); road(x - 14, z + 22.5, x + 14, z + 22.5); road(x - 14, z + 1.5, x - 14, z + 22.5); road(x + 14, z + 1.5, x + 14, z + 22.5);
+    for (let i = 0; i < 12; i++) tree(x - 13 + i * 2.4, z + 25, 0.8); }
+  const signTexOf = (text: string, color: string) => {
+    const cv = document.createElement("canvas"); cv.width = 256; cv.height = 128;
+    const c = cv.getContext("2d")!; c.fillStyle = color; c.fillRect(0, 0, 256, 128); c.fillStyle = "#fff"; c.font = "bold 40px sans-serif"; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText(text.slice(0, 6), 128, 64);
+    const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t;
+  };
+  const forSale = new THREE.MeshBasicMaterial({ map: signTexOf("待售", "#c4472f"), side: THREE.DoubleSide });
+  type ES = { base: THREE.Mesh; obj: THREE.Group | null; sign: THREE.Mesh; tag: HTMLButtonElement; key: string; ver: number; tex: THREE.Texture | null };
+  const estates: ES[] = [];
+  for (let id = 0; id < ESTATE_COUNT; id++) {
+    const { x, z } = estatePos(id);
+    const base = new THREE.Mesh(new THREE.BoxGeometry(6, 0.14, 6), M(0xc9c3b4)); base.position.set(x, 0.07, z); base.receiveShadow = true; scene.add(base);
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.2), forSale); sign.position.set(x + 1.6, 1.4, z + 1.6); sign.quaternion.copy(cam.quaternion); scene.add(sign);
+    const tag = document.createElement("button"); tag.className = "lot"; tag.textContent = `${Math.floor(id / 4) + 1}-${(id % 4) + 1}`; overlay.appendChild(tag);
+    tag.onclick = (e) => { e.stopPropagation(); onPick("qt"); };
+    estates.push({ base, obj: null, sign, tag, key: "", ver: -1, tex: null });
+  }
+
   /* ---- 拖动和缩放 ---- */
   let drag: { x: number; y: number; t: THREE.Vector3 } | null = null;
   let downAt: { x: number; y: number } | null = null;
@@ -531,6 +554,7 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
     (Object.keys(pins) as PlaceId[]).forEach((k) => project(pins[k], PLACES[k].x, PLACES[k].h, PLACES[k].z));
     shopViews.forEach((v) => { if (!v.tag.hidden) project(v.tag, v.x, 3.2, v.z); });
     lots.forEach((L, id) => { const { x, z } = plotPos(id); project(L.tag, x, L.house ? 4.2 : 1.8, z); });
+    estates.forEach((E, id) => { const { x, z } = estatePos(id); project(E.tag, x, E.obj ? 5.6 : 2.4, z); });
     raf = requestAnimationFrame(frame);
   };
   placeCam(); resize(); raf = requestAnimationFrame(frame);
@@ -549,6 +573,35 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
         box(0.8, 1.1, 0.06, mats.glass, -0.5, 0, 1.02, g); box(0.5, 1.2, 0.06, M(0x6b4a33), 0.6, 0, 1.02, g);
         g.position.set(st.x, 0.1, st.z); scene.add(g); st.obj = g;
         st.tag.textContent = `${kd.ic} ${sh.name}`;
+      });
+    },
+    setEstates(list) {
+      list.forEach((e) => {
+        const E = estates[e.id]; if (!E) return;
+        const key = `${e.ownerName || ""}|${e.kind || ""}|${e.name || ""}`;
+        if (E.key !== key) {
+          E.key = key; if (E.obj) { scene.remove(E.obj); E.obj = null; }
+          const { x, z } = estatePos(e.id);
+          E.tag.textContent = e.kind ? `${EKINDS[e.kind].ic} ${e.name}` : e.ownerName ? `${e.ownerName}的地` : `${Math.floor(e.id / 4) + 1}-${(e.id % 4) + 1} 待售`;
+          E.tag.classList.toggle("sold", !!e.ownerName);
+          if (e.kind) {
+            const k = EKINDS[e.kind], g = new THREE.Group(), col = M(k.color), h = e.kind === "market" ? 2.6 : e.kind === "gym" ? 3.4 : 2.4;
+            box(5, h, 4.2, mats.white, 0, 0, -0.4, g); box(5.2, 0.25, 4.4, col, 0, h, -0.4, g); box(4.6, 0.5, 0.14, col, 0, h - 0.7, 1.75, g);
+            box(1.8, 1.4, 0.06, mats.glass, -1.2, 0, 1.72, g); box(1.2, 1.5, 0.06, M(0x6b4a33), 1.2, 0, 1.72, g);
+            if (e.kind === "gym") box(5, 0.9, 0.06, mats.glass2, 0, 1.8, 1.72, g);
+            g.position.set(x, 0.14, z); scene.add(g); E.obj = g;
+            E.sign.position.set(x, h + 1.4, z); E.sign.scale.set(1.6, 1.6, 1);
+          } else { E.sign.position.set(x + 1.6, 1.4, z + 1.6); E.sign.scale.set(1, 1, 1); }
+          E.ver = -1; // 重新决定招牌
+        }
+        const ver = e.kind ? e.sign : -2;
+        if (E.ver === ver) return;
+        E.ver = ver; E.tex?.dispose(); E.tex = null;
+        if (!e.kind) { E.sign.material = e.ownerName ? new THREE.MeshBasicMaterial({ map: signTexOf("已售", "#5d6b63"), side: THREE.DoubleSide }) : forSale; return; }
+        const k = EKINDS[e.kind];
+        const fallback = () => { const t = signTexOf(e.name || k.name, "#" + k.color.toString(16).padStart(6, "0")); E.tex = t; E.sign.material = new THREE.MeshBasicMaterial({ map: t, side: THREE.DoubleSide }); };
+        if (!e.sign) return fallback();
+        loader.load(`/api/estates/${e.id}/sign?v=${e.sign}`, (tex) => { if (E.ver !== ver) return tex.dispose(); tex.colorSpace = THREE.SRGBColorSpace; E.tex = tex; E.sign.material = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide }); }, undefined, fallback);
       });
     },
     setBoats(list) {

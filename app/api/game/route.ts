@@ -97,6 +97,8 @@ export async function POST(req: Request) {
   if (!r) return json({ error: "操作失败" }, 500);
   if (b.op === "reset" && !r.out.error) { // 重开游戏：地和店都还回去
     await DB.prepare("UPDATE plots SET owner = NULL, owner_name = NULL, bought_at = NULL WHERE owner = ?").bind(user.id).run();
+    await DB.prepare("UPDATE estates SET owner = NULL, owner_name = NULL, bought_at = NULL, kind = NULL, name = NULL, price = NULL, wage = NULL, openings = 0, till = 0, visits = 0, npc = 0, settled_at = NULL, sign = NULL, sign_mime = NULL, sign_ver = sign_ver + 1 WHERE owner = ?").bind(user.id).run();
+    await DB.prepare("DELETE FROM estate_staff WHERE user_id = ? OR estate_id IN (SELECT id FROM estates WHERE owner IS NULL)").bind(user.id).run();
     await DB.prepare("UPDATE shops SET owner = NULL, owner_name = NULL, kind = NULL, name = NULL, price = NULL, till = 0, sold = 0, npc = 0, settled_at = NULL, opened_at = NULL WHERE owner = ?").bind(user.id).run();
   }
   if (r.out.error) return json({ error: r.out.error, state: r.state }, 400);

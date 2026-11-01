@@ -1,7 +1,7 @@
 // 纯游戏规则：不依赖界面，前后端都能用。
 import { geo } from "./geo";
 const at = (lon: number, lat: number) => geo(lon, lat);
-export type PlaceId = "home" | "rmgy" | "metro" | "bund" | "chp" | "tzf" | "wk" | "ykl" | "ljz" | "ferry" | "njl" | "jas" | "xtd" | "xjh" | "hq" | "wjc" | "expo" | "sjgy" | "zj" | "gongfang" | "jiangjing" | "yangfang" | "sjxc" | "pvg" | "sha" | "dsh";
+export type PlaceId = "home" | "rmgy" | "metro" | "bund" | "chp" | "tzf" | "wk" | "ykl" | "ljz" | "ferry" | "njl" | "jas" | "xtd" | "xjh" | "hq" | "wjc" | "expo" | "sjgy" | "zj" | "gongfang" | "jiangjing" | "yangfang" | "sjxc" | "pvg" | "sha" | "dsh" | "qt";
 export type JobId = "coder" | "barista" | "designer" | "engineer";
 export type Stats = { energy: number; hunger: number; fun: number; social: number };
 export type State = Stats & {
@@ -14,6 +14,7 @@ export type State = Stats & {
   lv?: number; xp?: number; // 当前职业的等级（1–5）和经验
   costDay?: number; // 下次结算一周生活开销的日子
   sk?: Partial<Record<SkillId, number>>; // 各项能力的累计经验
+  shiftDay?: number; // 最近一次在玩家店里打工的游戏日
 };
 
 // 可以租住的房子：每处都是地图上的一个地点
@@ -45,7 +46,7 @@ export const LICENSE_LV = 3;
 export function skillLv(xp: number, max = SKILL_MAX) { let lv = 0, need = 3; while (lv < max && xp >= need) { xp -= need; lv++; need = 3 + lv; } return { lv, into: xp, need: lv >= max ? 0 : need }; }
 export const sLv = (s: State, k: SkillId) => skillLv(s.sk?.[k] || 0, skillMax(k)).lv;
 export const sBonus = (s: State, k: SkillId) => sLv(s, k) * skillPer(k);
-function gainSkills(s: State, g: Partial<Record<SkillId, number>>) {
+export function gainSkills(s: State, g: Partial<Record<SkillId, number>>) {
   const ups: string[] = [];
   s.sk = { ...(s.sk || {}) };
   for (const k in g) {
@@ -129,6 +130,7 @@ export const PLACES: Record<PlaceId, { name: string; ic: string; x: number; z: n
   sjxc: { name: "松江新城售楼处", ic: "🏘️", ...at(121.228, 31.0325), h: 6, sub: "松江 · 24 块地出售", desc: "地铁9号线终点附近的新城，湖边一排排待建的地块，买下一块就有自己的家。" },
   pvg: { name: "浦东机场", ic: "✈️", ...at(121.805, 31.143), h: 6, sub: "浦东 · 国际航班", desc: "两座航站楼像展开的翅膀，磁悬浮七分多钟从龙阳路飞过来。" },
   sha: { name: "虹桥机场", ic: "🛫", ...at(121.356, 31.1955), h: 5, sub: "长宁 · 国内航班", desc: "离市区近，跑道另一头就是虹桥火车站，飞机和高铁背靠背。" },
+  qt: { name: "前滩商业地块", ic: "🏗️", ...at(121.486, 31.1465), h: 6, sub: "浦东 · 12 块商业地出售", desc: "黄浦江边的新商务区，规划好的地块等人来盖健身房、咖啡馆、超市和服装店。" },
   dsh: { name: "滴水湖", ic: "🌊", ...at(121.930, 30.905), h: 4, sub: "临港 · 东海边", desc: "一圈圈同心圆的人工湖，湖边风车慢慢转，再往东就是大海。" },
   ferry: { name: "东金线轮渡", ic: "⛴️", ...at(121.4955, 31.2325), h: 4, sub: "两块钱过江", desc: "坐轮渡过黄浦江，比地铁慢，但风景好。" },
 };
@@ -160,6 +162,7 @@ export const ACTS: Record<PlaceId, Act[]> = {
   ferry: [["坐轮渡吹江风", 30, 2, { fun: 14 }]],
   pvg: [["飞东京玩三天", 4320, 3200, { fun: 60, energy: -25, social: 10 }], ["飞巴厘岛躺五天", 7200, 5800, { fun: 80, energy: 20, hunger: -10 }], ["去接机，顺便吃碗面", 90, 35, { hunger: 30, social: 8 }]],
   sha: [["飞三亚度假两天", 2880, 1900, { fun: 45, energy: 10 }], ["飞北京出差一天", 1440, 1200, { energy: -30, fun: -5 }, "trip"], ["隔着玻璃看飞机起降", 40, 0, { fun: 10 }]],
+  qt: [["江边绿道散步", 60, 0, { fun: 14, energy: -4 }], ["在太古里吃个午饭", 50, 75, { hunger: 50, fun: 8 }]],
   dsh: [["环湖骑行", 120, 30, { fun: 25, energy: -15 }], ["海边看日出", 90, 0, { fun: 22, energy: -5 }], ["吃一顿海鲜大排档", 80, 160, { hunger: 60, fun: 15 }], ["逛海昌海洋公园", 240, 290, { fun: 40, energy: -18 }]],
   njl: [["逛第一百货", 90, 60, { fun: 18, energy: -8 }], ["买沈大成青团", 20, 18, { hunger: 22, fun: 4 }], ["和扫地阿姨聊两句", 15, 0, { social: 8 }, null, "sao"]],
   jas: [["进寺烧香许愿", 45, 10, { fun: 12, energy: 3 }, null, "shifu"], ["逛久光百货", 90, 80, { fun: 20, energy: -10 }]],
@@ -212,10 +215,10 @@ export function newGame(name: string, job: JobId): State {
   return s;
 }
 
-function log(s: State, t: string) { s.log.unshift([stamp(s), t]); s.log = s.log.slice(0, 40); }
-function apply(s: State, eff: Partial<Stats>) { for (const k in eff) { const key = k as keyof Stats; s[key] = clamp(s[key] + (eff[key] || 0)); } }
+export function log(s: State, t: string) { s.log.unshift([stamp(s), t]); s.log = s.log.slice(0, 40); }
+export function apply(s: State, eff: Partial<Stats>) { for (const k in eff) { const key = k as keyof Stats; s[key] = clamp(s[key] + (eff[key] || 0)); } }
 
-function advance(s: State, mins: number) {
+export function advance(s: State, mins: number) {
   const before = s.day;
   s.min += mins;
   while (s.min >= 1440) { s.min -= 1440; s.day++; }
@@ -235,7 +238,7 @@ function advance(s: State, mins: number) {
   }
 }
 
-function check(s: State) {
+export function check(s: State) {
   if (s.hunger <= 0) { s.hunger = 30; s.money -= 200; s.at = homeOf(s); log(s, "饿昏了头，被送去社区医院挂了水，花了¥200。"); }
   if (s.energy <= 0) { s.energy = 40; s.at = homeOf(s); advance(s, 600); log(s, "累到在地铁上困着，坐过了五站。回家困了一整夜。"); }
   if (s.money < -3000) log(s, "欠了一屁股债，只好卷铺盖回老家。点“重新开始”再来一局。");
