@@ -1,11 +1,12 @@
 // 店招牌：店主上传（免费随时换），所有人都能看。图片存在 D1。
 import { env, readCookie, userFromToken, SESSION_COOKIE, json } from "../../../../../lib/auth";
 import { sniffImage } from "../../../../../lib/boats";
-import { ESTATE_COUNT, SIGN_MAX_BYTES } from "../../../../../lib/estates";
+import { SIGN_MAX_BYTES } from "../../../../../lib/estates";
+import { validCell } from "../../../../../lib/grid";
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const id = Number((await params).id);
-  if (!Number.isInteger(id) || id < 0 || id >= ESTATE_COUNT) return json({ error: "没有这块地" }, 400);
+  if (!validCell(id)) return json({ error: "没有这块地" }, 400);
   const { DB } = await env();
   const user = await userFromToken(DB, readCookie(req.headers.get("cookie"), SESSION_COOKIE));
   if (!user) return json({ error: "请先登录" }, 401);

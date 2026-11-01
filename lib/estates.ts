@@ -1,33 +1,17 @@
-// 前滩商业地块：买地 → 盖健身房 / 咖啡馆 / 超市 / 服装店 → 挂招牌 → 雇玩家来打工。
+// 商业地块：买地 → 盖健身房 / 咖啡馆 / 超市 / 服装店 → 挂招牌 → 雇玩家来打工。
 // 规则前后端共用；谁买了、账上多少钱存在 estates 表。
-import { onGrid } from "./geo";
+import { cellPos, parcelName, parcelOf, placeOfCell } from "./grid";
 import { PLACES, advance, apply, check, gainSkills, log, sBonus, type PlaceId, type SkillId, type State } from "./game";
 
-// 12 块商业地分散在全市，各自挂在一个地点旁边；地段越好越贵、客流越大
-export const LOTS: { place: PlaceId; dx: number; dz: number; price: number; traffic: number }[] = [
-  { place: "ljz", dx: 6, dz: 5, price: 180000, traffic: 1.6 },
-  { place: "njl", dx: -5, dz: -5, price: 165000, traffic: 1.55 },
-  { place: "xtd", dx: 5, dz: 5, price: 150000, traffic: 1.45 },
-  { place: "jas", dx: -6, dz: -4, price: 140000, traffic: 1.4 },
-  { place: "xjh", dx: -6, dz: 4, price: 120000, traffic: 1.3 },
-  { place: "wjc", dx: 6, dz: 4, price: 100000, traffic: 1.2 },
-  { place: "qt", dx: 0, dz: 6, price: 95000, traffic: 1.15 },
-  { place: "zj", dx: 6, dz: -5, price: 85000, traffic: 1.05 },
-  { place: "hq", dx: -6, dz: 5, price: 80000, traffic: 1.0 },
-  { place: "sjgy", dx: 6, dz: 6, price: 70000, traffic: 0.9 },
-  { place: "sjxc", dx: -26, dz: 4, price: 45000, traffic: 0.65 },
-  { place: "dsh", dx: 8, dz: -20, price: 40000, traffic: 0.55 },
-];
-export const ESTATE_COUNT = LOTS.length;
+// 商业地块就是地图上的商业格子（编号 = 格子编号），谁买了才在 estates 表里有一行
+export const estatePrice = (id: number) => parcelOf(id)?.price ?? 0;
+export const estatePlace = (id: number) => parcelOf(id)?.place ?? placeOfCell(id) ?? "home";
+export const estatePos = (id: number) => cellPos(id);
+export const estateName = (id: number) => parcelName(id);
 export const MAX_ESTATES = 2; // 每人最多 2 块
 export const MAX_STAFF = 3; // 每家最多雇 3 人
 export const SIGN_MAX_BYTES = 300 * 1024;
 export const HIDE_AFTER_REPORTS = 3;
-export const estatePrice = (id: number) => LOTS[id].price;
-export const estatePlace = (id: number) => LOTS[id].place;
-export const estatePos = (id: number) => onGrid({ x: PLACES[LOTS[id].place].x + LOTS[id].dx, z: PLACES[LOTS[id].place].z + LOTS[id].dz });
-export const estateName = (id: number) => `${PLACES[LOTS[id].place].name}商业地块`;
-export const estateAt = (place: PlaceId) => LOTS.findIndex((l) => l.place === place);
 
 export type EstateKind = "gym" | "cafe" | "market" | "clothes";
 type Eff = Partial<Record<"energy" | "hunger" | "fun" | "social", number>>;
@@ -50,7 +34,7 @@ export const wageOk = (w: number) => Number.isInteger(w) && w >= WAGE_MIN && w <
 
 // 散客：价格越低人越多；每多一名员工客流 +20%；店主相关能力再加成
 export function npcPerHour(id: number, k: EstateKind, price: number, staff: number, boost = 0) {
-  const traffic = LOTS[id].traffic;
+  const traffic = Math.max(0.5, Math.min(1.7, estatePrice(id) / 120000)); // 地价越高的地段客流越大
   const customers = traffic * NPC_PER_HOUR * Math.min(2.5, Math.pow(EKINDS[k].ref / price, 1.6)) * (1 + staff * 0.2) * (1 + boost);
   return { customers, profit: customers * (price - EKINDS[k].ref * COST_RATE) };
 }

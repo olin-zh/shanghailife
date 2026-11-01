@@ -1,8 +1,9 @@
-// 前滩商业地块的所有操作。钱都在服务器上算：先抢占/改数据库，再改存档，存档改不成就回滚。
+// 商业地块的所有操作。钱都在服务器上算：先抢占/改数据库，再改存档，存档改不成就回滚。
 import { env, readCookie, userFromToken, SESSION_COOKIE, json } from "../../../../lib/auth";
 import { mutate, loadSave } from "../../../../lib/store";
 import { PLACES, sBonus, type State } from "../../../../lib/game";
-import { EKINDS, ESTATE_COUNT, MAX_ESTATES, MAX_STAFF, canShift, doShift, estateName, estatePlace, estatePrice, priceOk, settle, shiftRevenue, visitEstate, wageOk, type EstateKind } from "../../../../lib/estates";
+import { parcelOf, validCell } from "../../../../lib/grid";
+import { EKINDS, MAX_ESTATES, MAX_STAFF, canShift, doShift, estateName, estatePlace, estatePrice, priceOk, settle, shiftRevenue, visitEstate, wageOk, type EstateKind } from "../../../../lib/estates";
 
 type Row = { owner: string | null; owner_name: string | null; kind: EstateKind | null; name: string | null; price: number | null; wage: number | null; openings: number; till: number; npc: number; settled_at: number | null };
 const log = (n: State, t: string) => { n.log.unshift([`第${n.day}天`, t]); n.log = n.log.slice(0, 40); };
@@ -30,7 +31,7 @@ const pay = (DB: D1Database, uid: string, amount: number, line: string) =>
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const id = Number((await params).id);
-  if (!Number.isInteger(id) || id < 0 || id >= ESTATE_COUNT) return json({ error: "没有这块地" }, 400);
+  if (!validCell(id)) return json({ error: "没有这块地" }, 400);
   const { DB } = await env();
   const user = await userFromToken(DB, readCookie(req.headers.get("cookie"), SESSION_COOKIE));
   if (!user) return json({ error: "请先登录" }, 401);
@@ -41,16 +42,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const needHere = (what: string) => (here ? null : json({ error: `先到${PLACES[PLACE].name}才能${what}` }, 400));
 
   if (b.op === "buy") {
+    if (parcelOf(id)?.use !== "com") return json({ error: "这一格不是商业用地" }, 400);
     const nh = needHere("买地"); if (nh) return nh;
     const price = estatePrice(id);
     if (save.money < price) return json({ error: `钞票不够，这块地要¥${price.toLocaleString()}` }, 400);
     const own = (await DB.prepare("SELECT COUNT(*) AS n FROM estates WHERE owner = ?").bind(user.id).first<{ n: number }>())?.n ?? 0;
     if (own >= MAX_ESTATES) return json({ error: `每人最多买 ${MAX_ESTATES} 块商业地` }, 400);
-    const claimed = await DB.prepare("UPDATE estates SET owner = ?, owner_name = ?, bought_at = ?, kind = NULL, name = NULL, price = NULL, wage = NULL, openings = 0, till = 0, visits = 0, npc = 0, settled_at = NULL, sign = NULL, sign_mime = NULL, sign_hidden = 0 WHERE id = ? AND owner IS NULL")
-      .bind(user.id, save.name, Date.now(), id).run().then((r) => r.meta.changes === 1).catch(() => false);
+    // 只有这格没人买才插得进去；sign_ver 从时间戳起步，避免浏览器缓存到上一任店主的招牌
+    const claimed = await DB.prepare("INSERT INTO estates (id, owner, owner_name, bought_at, sign_ver) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING")
+      .bind(id, user.id, save.name, Date.now(), Math.floor(Date.now() / 1000) - 1_700_000_000).run().then((r) => r.meta.changes === 1).catch(() => false);
     if (!claimed) return json({ error: "这块地刚被别人买走了" }, 409);
     const r = await pay(DB, user.id, -price, `买下${lot}，花了¥${price.toLocaleString()}。`);
-    if (!r?.out) { await DB.prepare("UPDATE estates SET owner = NULL, owner_name = NULL, bought_at = NULL WHERE id = ? AND owner = ?").bind(id, user.id).run(); return json({ error: "钞票不够，没买成" }, 400); }
+    if (!r?.out) { await DB.prepare("DELETE FROM estates WHERE id = ? AND owner = ?").bind(id, user.id).run(); return json({ error: "钞票不够，没买成" }, 400); }
     return json({ state: r.state, toast: `买下${lot}了！接下来盖点什么吧 🏗️` });
   }
 
@@ -83,7 +86,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (b.op === "sell" && mine && !r.kind) { // 空地转卖，回收六成
     const nh = needHere("卖地"); if (nh) return nh;
     const refund = Math.round(estatePrice(id) * 0.6);
-    const c = await DB.prepare("UPDATE estates SET owner = NULL, owner_name = NULL, bought_at = NULL WHERE id = ? AND owner = ? AND kind IS NULL").bind(id, user.id).run();
+    const c = await DB.prepare("DELETE FROM estates WHERE id = ? AND owner = ? AND kind IS NULL").bind(id, user.id).run();
     if (c.meta.changes !== 1) return json({ error: "请再试一次" }, 409);
     const p = await pay(DB, user.id, refund, `把${lot}转卖了，回收¥${refund.toLocaleString()}。`);
     return json({ state: p?.state, toast: `卖掉了，到手¥${refund.toLocaleString()}` });
@@ -158,7 +161,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const till = Math.round(r.till);
     const refund = b.op === "sell" ? Math.round(estatePrice(id) * 0.6 + k.build * 0.3) : 0;
     const cleared = b.op === "sell"
-      ? await DB.prepare("UPDATE estates SET owner = NULL, owner_name = NULL, bought_at = NULL, kind = NULL, name = NULL, price = NULL, wage = NULL, openings = 0, till = 0, visits = 0, npc = 0, settled_at = NULL, sign = NULL, sign_mime = NULL, sign_ver = sign_ver + 1, sign_hidden = 0 WHERE id = ? AND owner = ? AND settled_at = ?").bind(id, user.id, r.settled_at).run()
+      ? await DB.prepare("DELETE FROM estates WHERE id = ? AND owner = ? AND settled_at = ?").bind(id, user.id, r.settled_at).run()
       : await DB.prepare("UPDATE estates SET till = till - ? WHERE id = ? AND owner = ? AND settled_at = ?").bind(r.till, id, user.id, r.settled_at).run();
     if (cleared.meta.changes !== 1) return json({ error: "店里刚有客人，请再点一次" }, 409);
     if (b.op === "sell") await DB.prepare("DELETE FROM estate_staff WHERE estate_id = ?").bind(id).run();

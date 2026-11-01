@@ -10,7 +10,9 @@ export type State = Stats & {
   pals?: Record<string, { name: string; n: number }>; // 真人玩家好友：一起做事的次数
   home?: HomeId; // 租住的地方，没有就是亭子间
   rentDay?: number; // 下次交房租的日子
-  ownPlot?: number; // 在松江新城买下的地块编号
+  ownPlot?: number; // 现在住的自家地块（格子编号）
+  homeAt?: PlaceId; // 自家房子挨着哪个地点（在那里睡觉）
+  houses?: Record<number, PlaceId>; // 名下的住宅地块：格子编号 → 所在地点
   lv?: number; xp?: number; // 当前职业的等级（1–5）和经验
   costDay?: number; // 下次结算一周生活开销的日子
   sk?: Partial<Record<SkillId, number>>; // 各项能力的累计经验
@@ -24,7 +26,7 @@ export const HOMES: Record<HomeId, { rent: number; perk: Partial<Stats>; note: s
   gongfang: { rent: 4500, perk: { energy: 5 }, note: "老公房一室户，离五角场近，睡得更香" },
   jiangjing: { rent: 12000, perk: { energy: 10, fun: 10 }, note: "陆家嘴江景，一早醒来看得到东方明珠" },
   yangfang: { rent: 20000, perk: { energy: 12, fun: 15, social: 5 }, note: "带小花园的老洋房，朋友都想来坐坐" },
-  sjxc: { rent: 0, perk: { energy: 15, fun: 12, social: 3 }, note: "自己买的房子，不用交房租，就是离市区远" },
+  sjxc: { rent: 0, perk: { energy: 15, fun: 12, social: 3 }, note: "自己买的房子，不用交房租" },
 };
 /* ---------- 能力：6 种，每种 0–20 级，每级加成 SKILL_BONUS ---------- */
 export type SkillId = "pro" | "talk" | "cook" | "fit" | "drive" | "sh";
@@ -95,8 +97,11 @@ const inHours = (h: number, a: number, b: number) => (a <= b ? h >= a && h < b :
 const rainy = (s: State) => s.month >= 6 && s.month <= 7;
 export function gigHint(g: Gig) { return `${g.from}–${g.to === 24 ? 24 : g.to}点 · ¥${g.pay[0]}–${g.pay[1]}${g.note ? ` · ${g.note}` : ""}`; }
 
-export const isHome = (p: PlaceId): p is HomeId => p in HOMES;
+export const isHome = (p: PlaceId): p is HomeId => p in HOMES && p !== "sjxc"; // 能租的房子（自家房子另算）
 export const homeOf = (s: State): HomeId => s.home || "home";
+// 回家去哪个地点：住自家房子就是房子旁边的地点
+export const homePlace = (s: State): PlaceId => (s.home === "sjxc" ? s.homeAt || "sjxc" : homeOf(s));
+export const ownsHouseAt = (s: State, at: PlaceId) => Object.entries(s.houses || {}).filter(([, p]) => p === at).map(([id]) => Number(id));
 
 export const JOBS: Record<JobId, { place: PlaceId; pay: number; title: string; ic: string }> = {
   coder: { place: "ljz", pay: 420, title: "陆家嘴码农", ic: "💻" },
@@ -149,7 +154,8 @@ export const NPCS: Record<string, { name: string; line: string }> = {
 type Act = [label: string, mins: number, cost: number, eff: Partial<Stats>, kind?: "work" | "overtime" | "gig" | "interview" | "rent" | "movein" | "trip" | null, npc?: string];
 const HOME_ACTS: Act[] = [["困觉（睡一觉）", 480, 0, { energy: 70, hunger: -25 }], ["在家做饭", 60, 25, { hunger: 45, fun: 3 }], ["刷网课学技能", 120, 49, { energy: -8, fun: -5 }], ["刷手机", 60, 0, { fun: 15, energy: -5 }], ["外卖点一份炸猪排", 40, 38, { hunger: 45 }]];
 export const ACTS: Record<PlaceId, Act[]> = {
-  gongfang: HOME_ACTS, jiangjing: HOME_ACTS, yangfang: HOME_ACTS, sjxc: HOME_ACTS,
+  gongfang: HOME_ACTS, jiangjing: HOME_ACTS, yangfang: HOME_ACTS,
+  sjxc: [["湖边散步", 45, 0, { fun: 10, energy: -3 }], ["逛新城万达", 90, 60, { fun: 15, hunger: 20 }]],
   home: [["困觉（睡一觉）", 480, 0, { energy: 70, hunger: -25 }], ["吃王阿姨的菜泡饭", 30, 0, { hunger: 35, social: 5 }, null, "ayi"], ["在家做饭", 60, 25, { hunger: 45, fun: 3 }], ["刷网课学技能", 120, 49, { energy: -8, fun: -5 }], ["刷手机", 60, 0, { fun: 15, energy: -5 }], ["外卖点一份炸猪排", 40, 38, { hunger: 45 }]],
   metro: [["在站台等下一班", 20, 0, { fun: -3 }], ["便利店买杯豆浆", 10, 6, { hunger: 10, energy: 3 }]],
   ljz: [["去楼下买饭团", 15, 9, { hunger: 20 }], ["和同事吐槽老板", 30, 0, { fun: 10, social: 10 }]],
@@ -187,9 +193,9 @@ export function actsAt(s: State | null, at: PlaceId): Act[] {
   return extra.length ? [...extra, ...base] : base;
 }
 function actsAtBase(s: State | null, at: PlaceId): Act[] {
-  if (at === "sjxc" && s && homeOf(s) !== "sjxc") {
-    return s.ownPlot != null ? [["搬进自己的房子", 120, 0, { fun: 15 }, "movein"], ["去自家地块转转", 30, 0, { fun: 6 }]] : [["看看样板房", 30, 0, { fun: 5 }], ["湖边散步", 45, 0, { fun: 10, energy: -3 }]];
-  }
+  // 自家房子：住在这里就能在家做事；房子在这里但没住进来，可以搬进来
+  if (s && s.home === "sjxc" && s.homeAt === at) return isHome(at) ? HOME_ACTS : [...HOME_ACTS, ...ACTS[at]];
+  if (s && ownsHouseAt(s, at).length) return [["搬进自己的房子", 120, 0, { fun: 15 }, "movein"], ...(isHome(at) ? [] : ACTS[at])];
   if (!isHome(at) || !s || homeOf(s) === at) return ACTS[at];
   const r = HOMES[at].rent;
   return [[`租下这里（先付一个月¥${r.toLocaleString()}）`, 90, r, { fun: 10 }, "rent"], ["看看房", 30, 0, { fun: 3 }]];
@@ -239,8 +245,8 @@ export function advance(s: State, mins: number) {
 }
 
 export function check(s: State) {
-  if (s.hunger <= 0) { s.hunger = 30; s.money -= 200; s.at = homeOf(s); log(s, "饿昏了头，被送去社区医院挂了水，花了¥200。"); }
-  if (s.energy <= 0) { s.energy = 40; s.at = homeOf(s); advance(s, 600); log(s, "累到在地铁上困着，坐过了五站。回家困了一整夜。"); }
+  if (s.hunger <= 0) { s.hunger = 30; s.money -= 200; s.at = homePlace(s); log(s, "饿昏了头，被送去社区医院挂了水，花了¥200。"); }
+  if (s.energy <= 0) { s.energy = 40; s.at = homePlace(s); advance(s, 600); log(s, "累到在地铁上困着，坐过了五站。回家困了一整夜。"); }
   if (s.money < -3000) log(s, "欠了一屁股债，只好卷铺盖回老家。点“重新开始”再来一局。");
 }
 
@@ -259,7 +265,7 @@ export function travel(prev: State, to: PlaceId): Result {
   const { cost } = trip(s.at, to), mins = Math.round(trip(s.at, to).mins * (1 - sBonus(s, "drive")));
   if (s.money < cost) {
     // 没钱坐地铁也能走回家，只是慢
-    if (to !== homeOf(s)) return { state: prev, toast: "钞票不够买地铁票了，只能先走回家" };
+    if (to !== homePlace(s)) return { state: prev, toast: "钞票不够买地铁票了，只能先走回家" };
     advance(s, mins * 3); s.at = to; s.energy = clamp(s.energy - 15);
     log(s, `没钱坐地铁，走了${Math.round(mins * 3 / 60)}个钟头回到${PLACES[to].name}。`);
     check(s);
@@ -321,8 +327,9 @@ export function act(prev: State, i: number): Result {
     return { state: s, toast: `${g.label}赚了¥${pay}`, label: g.label };
   }
   if (kind === "movein") {
-    s.home = "sjxc"; s.rentDay = undefined; advance(s, mins); apply(s, eff);
-    log(s, "搬进了松江新城自己的房子，从此不用交房租。");
+    const id = ownsHouseAt(s, s.at)[0]; if (id == null) return { state: prev };
+    s.home = "sjxc"; s.homeAt = s.at; s.ownPlot = id; s.rentDay = undefined; advance(s, mins); apply(s, eff);
+    log(s, `搬进了${PLACES[s.at].name}旁边自己的房子，从此不用交房租。`);
     check(s);
     return { state: s, toast: "住进自己的房子了 🏡", label: "搬进自己的房子" };
   }
@@ -400,24 +407,27 @@ export function coopable(at: PlaceId) {
   return ACTS[at].map((a, i) => ({ i, label: a[0], cost: a[2], kind: a[4] })).filter((x) => !x.kind);
 }
 
-/* ---------- 买地（地块归属由服务器的 plots 表决定，这里只改存档） ---------- */
-export function buyPlot(prev: State, id: number, price: number, name: string): Result {
-  if (prev.at !== "sjxc") return { state: prev, toast: "先到松江新城售楼处" };
-  if (prev.ownPlot != null) return { state: prev, toast: "每人只能买一块地" };
+/* ---------- 买住宅地（归属由服务器的 plots 表决定，这里只改存档） ---------- */
+export const MAX_HOUSES = 2;
+export function buyPlot(prev: State, id: number, place: PlaceId, price: number, name: string): Result {
+  if (prev.at !== place) return { state: prev, toast: `先到${PLACES[place].name}` };
+  if (Object.keys(prev.houses || {}).length >= MAX_HOUSES) return { state: prev, toast: `每人最多 ${MAX_HOUSES} 块住宅地` };
   if (prev.money < price) return { state: prev, toast: `还差¥${(price - prev.money).toLocaleString()}` };
   const s = structuredClone(prev);
-  s.money -= price; s.ownPlot = id; s.home = "sjxc"; s.rentDay = undefined; s.fun = clamp(s.fun + 25);
-  log(s, `在松江新城买下${name}，花了¥${price.toLocaleString()}，直接搬了进去。从此不用交房租！`);
+  s.money -= price; s.houses = { ...(s.houses || {}), [id]: place }; s.fun = clamp(s.fun + 25);
+  const moveIn = s.home !== "sjxc";
+  if (moveIn) { s.home = "sjxc"; s.homeAt = place; s.ownPlot = id; s.rentDay = undefined; }
+  log(s, `买下${name}，花了¥${price.toLocaleString()}${moveIn ? "，直接盖房搬了进去。从此不用交房租！" : "。"}`);
   return { state: s, toast: `买下${name}了！🏡`, label: `买下${name}` };
 }
 
-export function sellPlot(prev: State, price: number, name: string): Result {
-  if (prev.ownPlot == null) return { state: prev, toast: "侬没有地可卖" };
+export function sellPlot(prev: State, id: number, price: number, name: string): Result {
+  if (!prev.houses?.[id]) return { state: prev, toast: "这块不是侬的" };
   const s = structuredClone(prev);
   const back = Math.round(price * 0.9);
-  s.money += back; s.ownPlot = undefined;
-  if (homeOf(s) === "sjxc") { s.home = "home"; s.rentDay = s.day + 30; }
-  log(s, `卖掉了${name}，到手¥${back.toLocaleString()}（扣了一成手续费），搬回亭子间。`);
+  s.money += back; const h = { ...s.houses }; delete h[id]; s.houses = h;
+  if (s.ownPlot === id) { s.ownPlot = undefined; s.homeAt = undefined; s.home = "home"; s.rentDay = s.day + 30; }
+  log(s, `卖掉了${name}，到手¥${back.toLocaleString()}（扣了一成手续费）${s.home === "home" && prev.ownPlot === id ? "，搬回亭子间" : ""}。`);
   return { state: s, toast: `卖掉了，到手¥${back.toLocaleString()}` };
 }
 

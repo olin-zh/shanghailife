@@ -122,7 +122,7 @@ function riverSide(x: number, z: number) {
     const a = RIVER_PTS[k - 1], b = RIVER_PTS[k], d = segDist(x, z, a, b);
     if (d < best) { best = d; side = Math.sign((b[0] - a[0]) * (z - a[1]) - (b[1] - a[1]) * (x - a[0])); }
   }
-  return -side || 0; // 江水自南向北流（z 变小），右手边是东岸
+  return side || 0; // 江水自南向北流（z 变小），叉积为正是东岸
 }
 
 // 地标、机场、松江住宅区等预留的区域（不随机盖楼）
@@ -132,7 +132,6 @@ const FOOT: Partial<Record<PlaceId, number>> = { ljz: 15, home: 10, wk: 11, zj: 
 for (const k in PLACES) { const p = PLACES[k as PlaceId]; RESERVE.push({ x: p.x, z: p.z, r: FOOT[k as PlaceId] ?? 8 }); }
 { const [x0, z0] = G(121.4737, 31.2304); RESERVE.push({ x: x0, z: z0, r: 9 }); } // 人民广场
 for (let i = 0; i < 9; i++) { const [x, z] = G(121.4897, 31.2318 + i * 0.0015); RESERVE.push({ x, z, r: 3.5 }); } // 外滩万国建筑
-{ const s = PLACES.sjxc; RESERVE.push({ x: s.x, z: s.z + 10, r: 30 }); }
 RESERVE.push({ x: PLACES.pvg.x, z: PLACES.pvg.z, r: 24 }, { x: PLACES.sha.x + 1, z: PLACES.sha.z, r: 17 }, { x: PLACES.dsh.x + 6, z: PLACES.dsh.z, r: 30 });
 
 export type Grid = { type: Uint8Array; zone: Uint8Array; district: Int8Array; roadDist: Float32Array };
@@ -170,3 +169,39 @@ export function buildGrid(): Grid {
   return cached;
 }
 export const zoneAt = (g: Grid, i: number, j: number): Zone => (g.zone[j * COLS + i] ? "com" : "res");
+
+/* ---------- 地块：空格子都能买 ---------- */
+export const MAX_HOUSES = 2, MAX_SHOPS = 2;
+export const cellId = (i: number, j: number) => j * COLS + i;
+export const cellIJ = (id: number): Pt => [id % COLS, Math.floor(id / COLS)];
+export const cellPos = (id: number) => { const [i, j] = cellIJ(id); const [x, z] = centerOf(i, j); return { x, z }; };
+export const validCell = (id: number) => Number.isInteger(id) && id >= 0 && id < COLS * ROWS;
+const PLACE_IDS = Object.keys(PLACES) as PlaceId[];
+// 离哪个地点最近（4 格以内）：人要到那个地点才能买这格
+export function placeOfCell(id: number): PlaceId | null {
+  const [i, j] = cellIJ(id); let best: PlaceId | null = null, bd = 1e9;
+  for (const k of PLACE_IDS) { const [pi, pj] = cellOf(PLACES[k].x, PLACES[k].z); const cd = Math.max(Math.abs(pi - i), Math.abs(pj - j)); if (cd > 4) continue; const d = Math.hypot(pi - i, pj - j); if (d < bd) { bd = d; best = k; } }
+  return best;
+}
+export type Parcel = { id: number; use: Zone; place: PlaceId; price: number; district: string };
+const BASE: Record<string, number> = { 黄浦: 160000, 静安: 150000, 徐汇: 130000, 长宁: 120000, 浦东: 100000, 虹口: 100000, 杨浦: 95000, 普陀: 90000, 闵行: 70000, 宝山: 60000, 嘉定: 55000, 青浦: 50000, 松江: 45000, 奉贤: 40000, 金山: 35000 };
+const metroPts = () => METROS.map((m) => m.pts);
+// 某一格能不能买、卖多少：按区定基础价，离市中心越近越贵；临江 +30%，挨着主干道 +15%，地铁旁 +10%；商业格贵一半
+export function parcelOf(id: number): Parcel | null {
+  if (!validCell(id)) return null;
+  const g = buildGrid(); if (g.type[id] !== T.Land) return null;
+  const place = placeOfCell(id); if (!place) return null;
+  const [i, j] = cellIJ(id), [x, z] = centerOf(i, j), use: Zone = g.zone[id] ? "com" : "res";
+  const district = DISTRICTS[g.district[id]]?.name ?? "浦东";
+  const r = Math.hypot(x, z);
+  let p = (BASE[district] ?? 50000) * Math.max(0.5, Math.min(1.5, 1.5 - r / 100));
+  if (pathDist(RIVER_PTS, x, z) < 9) p *= 1.3;
+  if (g.roadDist[id] < 5) p *= 1.15;
+  if (metroPts().some((m) => pathDist(m, x, z) < 4)) p *= 1.1;
+  if (use === "com") p *= 1.5;
+  return { id, use, place, price: Math.round(p / 1000) * 1000, district };
+}
+export const parcelName = (id: number) => { const p = parcelOf(id); const [i, j] = cellIJ(id); return `${p?.district ?? ""}${p ? PLACES[p.place].name.replace(/站$/, "") + "旁" : ""} ${i}-${j} 号地`; };
+// 所有能买的格子（缓存）
+let parcelsCache: Parcel[] | null = null;
+export function allParcels() { if (!parcelsCache) { parcelsCache = []; for (let n = 0; n < COLS * ROWS; n++) { const p = parcelOf(n); if (p) parcelsCache.push(p); } } return parcelsCache; }

@@ -1,13 +1,12 @@
 // 3D 上海地图：Three.js 低多边形场景 + HTML 图钉/名字层。
 import * as THREE from "three";
 import { PLACES, type PlaceId } from "./game";
-import { PLOT_COUNT, SUBURB, plotName, plotPos, type Plot } from "./plots";
+import type { Plot } from "./plots";
 import { geo, onGrid } from "./geo";
-import { CELL, COLS, ROWS, XMIN, ZMIN, XMAX, ZMAX, T, buildGrid, centerOf, ROADS, RIVER_PTS, CREEK_PTS, COAST_PTS, SEA_POLY, GREENS, DISTRICTS, METROS } from "./grid";
+import { CELL, COLS, ROWS, XMIN, ZMIN, XMAX, ZMAX, T, buildGrid, centerOf, cellOf, cellId, cellPos, allParcels, parcelOf, ROADS, RIVER_PTS, CREEK_PTS, COAST_PTS, SEA_POLY, GREENS, DISTRICTS, METROS } from "./grid";
 import { BOAT_COUNT, HUANGPU_BOATS, type Boat } from "./boats";
 import { KINDS, SLOTS, type Shop } from "./shops";
-import { EKINDS, ESTATE_COUNT, LOTS, estatePos, type Estate } from "./estates";
-const LOT_PLACE = LOTS.map((l) => l.place);
+import { EKINDS, type Estate } from "./estates";
 
 export type Other = { id: string; name: string; at: PlaceId; color: number; act?: string };
 export type City = {
@@ -18,6 +17,7 @@ export type City = {
   setBoats(list: Boat[]): void;
   setShops(list: Shop[]): void;
   setEstates(list: Estate[]): void;
+  setCell(id: number | null): void;
   setPlayers(list: Other[]): void;
   bubble(id: string, text: string): void;
   focus(id: PlaceId): void;
@@ -25,7 +25,7 @@ export type City = {
   dispose(): void;
 };
 
-export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onPickPlayer: (id: string) => void, onPickBoat: (id: number) => void = () => {}): City {
+export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onPickPlayer: (id: string) => void, onPickBoat: (id: number) => void = () => {}, onPickCell: (id: number) => void = () => {}): City {
   const canvas = document.createElement("canvas");
   canvas.className = "map";
   root.appendChild(canvas);
@@ -84,18 +84,16 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(700, 700), mats.grass);
   ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
 
+  // 折线带：每段一个长方块，拐角处补一个圆盘，45°/90° 拐弯都不会出尖角
   const ribbon = (pts: number[][], w: number, m: THREE.Material = mats.water, y = 0.05) => {
-    const L: number[][] = [], R: number[][] = [];
-    pts.forEach(([x, z], i) => {
-      const [nx, nz] = pts[Math.min(i + 1, pts.length - 1)], [px, pz] = pts[Math.max(i - 1, 0)];
-      let dx = nx - px, dz = nz - pz; const l = Math.hypot(dx, dz); dx /= l; dz /= l;
-      // 折角处按斜接展宽，保证 45° 拐弯时宽度不变
-      let k = 1; if (i > 0 && i < pts.length - 1) { const ax = x - px, az = z - pz, al = Math.hypot(ax, az), bx = nx - x, bz = nz - z, bl = Math.hypot(bx, bz); const c = (ax * bx + az * bz) / (al * bl); k = 1 / Math.max(0.5, Math.sqrt((1 + c) / 2)); }
-      L.push([x + dz * w / 2 * k, z - dx * w / 2 * k]); R.push([x - dz * w / 2 * k, z + dx * w / 2 * k]);
-    });
-    const s = new THREE.Shape(); const all = [...L, ...R.reverse()];
-    s.moveTo(all[0][0], -all[0][1]); all.slice(1).forEach((p) => s.lineTo(p[0], -p[1]));
-    const g = new THREE.Mesh(new THREE.ShapeGeometry(s), m); g.rotation.x = -Math.PI / 2; g.position.y = y; g.receiveShadow = true; scene.add(g); return g;
+    const g = new THREE.Group();
+    for (let k = 1; k < pts.length; k++) {
+      const [ax, az] = pts[k - 1], [bx, bz] = pts[k], l = Math.hypot(bx - ax, bz - az); if (!l) continue;
+      const seg = new THREE.Mesh(new THREE.PlaneGeometry(l, w), m); seg.rotation.x = -Math.PI / 2; seg.rotation.z = -Math.atan2(bz - az, bx - ax);
+      seg.position.set((ax + bx) / 2, y, (az + bz) / 2); seg.receiveShadow = true; g.add(seg);
+    }
+    for (let k = 1; k < pts.length - 1; k++) { const d = new THREE.Mesh(new THREE.CircleGeometry(w / 2, 16), m); d.rotation.x = -Math.PI / 2; d.position.set(pts[k][0], y, pts[k][1]); g.add(d); }
+    scene.add(g); return g;
   };
   const G = (lon: number, lat: number) => { const p = geo(lon, lat); return [p.x, p.z]; };
   const grid = buildGrid();
@@ -126,11 +124,8 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
   };
   const unitBox = new THREE.BoxGeometry(1, 1, 1); unitBox.translate(0, 0.5, 0);
   const parkTiles: number[][] = [], trunks: number[][] = [], crowns: number[][] = [], crowns2: number[][] = [];
-  const towers: Record<string, number[][]> = { white: [], grey: [], glass: [], glass2: [], brick: [] };
   const nearPlace = (x: number, z: number, r: number) => { for (const k in PLACES) { const p = PLACES[k as PlaceId]; if (Math.hypot(p.x - x, p.z - z) < r) return true; } return false; };
   const addTree = (x: number, z: number, sc: number) => { trunks.push([x, 0, z, 0.35 * sc, 1 * sc, 0.35 * sc]); (rand() < 0.5 ? crowns : crowns2).push([x, 1.5 * sc, z, sc, sc, sc]); };
-  const lotSet = new Set<string>(); for (let i = 0; i < ESTATE_COUNT; i++) { const e = estatePos(i); lotSet.add(`${Math.floor((e.x - XMIN) / CELL)},${Math.floor((e.z - ZMIN) / CELL)}`); }
-  const riverXAt = (z: number) => { let best = riverPts[0]; for (const p of riverPts) if (Math.abs(p[1] - z) < Math.abs(best[1] - z)) best = p; return best[0]; };
   for (let j = 0; j < ROWS; j++) for (let i = 0; i < COLS; i++) {
     const n = j * COLS + i, t = grid.type[n], [x, z] = centerOf(i, j);
     if (t === T.Park) {
@@ -138,20 +133,16 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
       for (let k = 0; k < 2; k++) { const tx = x + rnd(-1.5, 1.5), tz = z + rnd(-1.5, 1.5); if (!nearPlace(tx, tz, 6)) addTree(tx, tz, rnd(0.7, 1.05)); }
       continue;
     }
-    if (t !== T.Land || lotSet.has(`${i},${j}`)) continue;
-    const r = Math.hypot(x, z), com = grid.zone[n] === 1;
-    const p = r < 25 ? 0.92 : r < 50 ? 0.75 : r < 80 ? 0.45 : com ? 0.25 : 0.07;
-    if (rand() > p) { if (r > 60 && rand() < 0.5) addTree(x + rnd(-1.4, 1.4), z + rnd(-1.4, 1.4), rnd(0.6, 1)); continue; }
-    const east = x > riverXAt(z) && z > -40 && z < 60;
-    const base = com ? (r < 30 ? 6 : 3.5) : 1.6, h = rnd(1.5, 4) + base + Math.max(0, 40 - r) / (east ? 2.5 : 8);
-    const w = rnd(2, 3.1), d = rnd(2, 3.1), key = east && com ? (rand() < 0.6 ? "glass" : "glass2") : com ? (rand() < 0.5 ? "white" : "glass2") : r < 35 && !east ? (rand() < 0.35 ? "brick" : "grey") : rand() < 0.5 ? "white" : "grey";
-    const cap = nearPlace(x, z, 15) ? 5 : com ? 16 : 7; // 地标旁边的楼压低，让地标露出来
-    towers[key].push([x + rnd(-0.4, 0.4), 0, z + rnd(-0.4, 0.4), w, Math.min(h, cap), d]);
+    // 空地：不再随机盖楼，只在郊区零星种几棵树
+    if (t === T.Land && Math.hypot(x, z) > 50 && !parcelOf(n) && rand() < 0.35) addTree(x + rnd(-1.4, 1.4), z + rnd(-1.4, 1.4), rnd(0.6, 1));
   }
+  // 能买的格子：住宅淡黄、商业淡蓝，一眼看出哪里能买
+  { const res: number[][] = [], com: number[][] = [];
+    for (const p of allParcels()) { const { x, z } = cellPos(p.id); (p.use === "com" ? com : res).push([x, 0.015, z, CELL - 0.5, 0.05, CELL - 0.5]); }
+    instanced(unitBox, M(0xe6e2b0), res, false); instanced(unitBox, M(0xc8d6e2), com, false); }
   instanced(unitBox, mats.park, parkTiles, false);
   const trunkG = new THREE.CylinderGeometry(0.4, 0.55, 1, 6); trunkG.translate(0, 0.5, 0);
   instanced(trunkG, mats.wood, trunks); instanced(new THREE.IcosahedronGeometry(0.9, 0), mats.green, crowns); instanced(new THREE.IcosahedronGeometry(0.9, 0), mats.dkgreen, crowns2);
-  instanced(unitBox, mats.white, towers.white); instanced(unitBox, mats.grey, towers.grey); instanced(unitBox, mats.glass, towers.glass); instanced(unitBox, mats.glass2, towers.glass2); instanced(unitBox, mats.brick, towers.brick);
   // 佘山：一座小山
   for (const g of GREENS) if (g.hill) { const [cx, cz] = centerOf(g.i, g.j); const hill = new THREE.Mesh(new THREE.ConeGeometry(CELL * g.w * 0.6, 7, 9), mats.dkgreen); hill.position.set(cx + CELL * (g.w - 1) / 2, 3.5, cz + CELL * (g.h - 1) / 2); hill.castShadow = true; scene.add(hill); }
   // 区界：相邻两格属于不同区，就在它们之间画一段线
@@ -189,25 +180,10 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
   const LM = { pearl: onGrid(geo(121.4998, 31.2397)), jinmao: { x: P.ljz.x, z: P.ljz.z + CELL }, swfc: { x: P.ljz.x + CELL, z: P.ljz.z + CELL }, tower: { x: P.ljz.x, z: P.ljz.z + CELL * 2 }, rps: onGrid(geo(121.4737, 31.2304)) };
   const shiftSince = (m0: number, dx: number, dz: number) => { for (let i = m0; i < scene.children.length; i++) { scene.children[i].position.x += dx; scene.children[i].position.z += dz; } };
 
-  /* ---- 松江新城：售楼处、湖、24 块地 ---- */
-  { const { x, z } = SUBURB;
-    road(x - 22, z - 6, x + 22, z - 6); road(x - 22, z + 27, x + 22, z + 27); road(x - 22, z - 6, x - 22, z + 27); road(x + 22, z - 6, x + 22, z + 27);
-    plot(x, z - 2, 8, 5, mats.stone); box(6, 2.6, 3, mats.white, x, 0, z - 2.5); box(6.4, 0.3, 3.4, mats.glass2, x, 2.6, z - 2.5); box(4, 0.8, 0.15, mats.red, x, 1.6, z - 0.9);
-    const lake = new THREE.Mesh(new THREE.CylinderGeometry(6, 6, 0.1, 28), mats.water); lake.position.set(x + 24, 0.12, z + 12); lake.scale.set(0.8, 1, 2); scene.add(lake);
-    for (let i = 0; i < 18; i++) tree(x - 18 + i * 2.1, z + 31, 0.9);
-    for (let i = 0; i < 4; i++) road(x - 18, z + 3 + i * 6 + 6, x + 18, z + 3 + i * 6 + 6, 0.8); }
-  type Lot = { base: THREE.Mesh; sign: THREE.Group; house: THREE.Group | null; tag: HTMLButtonElement; owner: string | null };
-  const lots: Lot[] = [];
-  const lotMat = M(0xb9d49c), lotMine = M(0xf2d27a), fence = M(0xf6f3ea);
-  for (let id = 0; id < PLOT_COUNT; id++) {
-    const { x, z } = plotPos(id);
-    const base = new THREE.Mesh(new THREE.BoxGeometry(5, 0.14, 5), lotMat); base.position.set(x, 0.07, z); base.receiveShadow = true; scene.add(base);
-    [[0, -2.5, 5, 0.12], [0, 2.5, 5, 0.12], [-2.5, 0, 0.12, 5], [2.5, 0, 0.12, 5]].forEach(([dx, dz, w, d]) => box(w, 0.35, d, fence, x + dx, 0, z + dz));
-    const sign = new THREE.Group(); box(0.12, 1.4, 0.12, mats.wood, 0, 0, 0, sign); box(1.2, 0.7, 0.08, mats.red, 0, 1.2, 0, sign); sign.position.set(x + 1.4, 0, z + 1.4); scene.add(sign);
-    const tag = document.createElement("button"); tag.className = "lot"; tag.textContent = plotName(id); overlay.appendChild(tag);
-    tag.onclick = (e) => { e.stopPropagation(); onPick("sjxc"); };
-    lots.push({ base, sign, house: null, tag, owner: null });
-  }
+  /* ---- 松江新城售楼处 ---- */
+  { const { x, z } = P.sjxc; plot(x, z, 8, 5, mats.stone); box(6, 2.6, 3, mats.white, x, 0, z - 0.5); box(6.4, 0.3, 3.4, mats.glass2, x, 2.6, z - 0.5); box(4, 0.8, 0.15, mats.red, x, 1.6, z + 1.1); }
+  type Lot = { house: THREE.Group; tag: HTMLButtonElement; key: string };
+  const lots = new Map<number, Lot>();
   const HOUSE_COLORS = [0xe0533d, 0x2f86c9, 0xe8a530, 0x4aa65a, 0x9a5cc4, 0xd4568a, 0x2fa8a0];
   const buildHouse = (id: number, seed: string) => {
     let h = 0; for (const c of seed) h = (h * 31 + c.charCodeAt(0)) >>> 0;
@@ -215,7 +191,7 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
     box(3, 2.2, 2.6, wall, 0, 0, -0.3, g); const r = cyl(0, 2.4, 1.3, roof, 0, 2.2, -0.3, 4, g); r.rotation.y = Math.PI / 4; r.scale.set(1, 1, 0.9);
     box(0.7, 1.2, 0.08, M(0x6b4a33), 0, 0, 1.0, g); box(0.6, 0.5, 0.08, mats.glass, -0.9, 1, 1.0, g); box(0.6, 0.5, 0.08, mats.glass, 0.9, 1, 1.0, g);
     if (h % 2) box(0.4, 0.9, 0.4, mats.brick, 0.8, 2.6, -0.6, g);
-    const { x, z } = plotPos(id); g.position.set(x, 0.14, z); scene.add(g); return g;
+    const { x, z } = cellPos(id); g.position.set(x, 0.1, z); scene.add(g); return g;
   };
 
   /* ---- 机场和滴水湖 ---- */
@@ -495,6 +471,15 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
     const r = canvas.getBoundingClientRect(); ndc.set(((cx - r.left) / r.width) * 2 - 1, -((cy - r.top) / r.height) * 2 + 1);
     ray.setFromCamera(ndc, cam); const hit = ray.intersectObjects(pickables, true)[0];
     if (hit) onPickBoat(hit.object.userData.boatId as number);
+    return !!hit;
+  };
+  // 点地面：算出是哪一格；能买的或已经有人的格子才弹出来
+  const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hitPt = new THREE.Vector3();
+  const pickCell = (cx: number, cy: number) => {
+    const r = canvas.getBoundingClientRect(); ndc.set(((cx - r.left) / r.width) * 2 - 1, -((cy - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(ndc, cam); if (!ray.ray.intersectPlane(groundPlane, hitPt)) return;
+    const [i, j] = cellOf(hitPt.x, hitPt.z); if (i < 0 || j < 0 || i >= COLS || j >= ROWS) return;
+    const id = cellId(i, j); if (parcelOf(id) || lots.has(id) || estates.has(id)) onPickCell(id);
   };
 
   /* ---- 玩家开的店：每个铺面一个位置，开了店才盖小店面 ---- */
@@ -510,17 +495,13 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
     const c = cv.getContext("2d")!; c.fillStyle = color; c.fillRect(0, 0, 256, 128); c.fillStyle = "#fff"; c.font = "bold 40px sans-serif"; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText(text.slice(0, 6), 128, 64);
     const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t;
   };
-  const forSale = new THREE.MeshBasicMaterial({ map: signTexOf("待售", "#c4472f"), side: THREE.DoubleSide });
-  type ES = { base: THREE.Mesh; obj: THREE.Group | null; sign: THREE.Mesh; tag: HTMLButtonElement; key: string; ver: number; tex: THREE.Texture | null };
-  const estates: ES[] = [];
-  for (let id = 0; id < ESTATE_COUNT; id++) {
-    const { x, z } = estatePos(id);
-    const base = new THREE.Mesh(new THREE.BoxGeometry(6, 0.14, 6), M(0xc9c3b4)); base.position.set(x, 0.07, z); base.receiveShadow = true; scene.add(base);
-    const sign = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.2), forSale); sign.position.set(x + 1.6, 1.4, z + 1.6); sign.quaternion.copy(cam.quaternion); scene.add(sign);
-    const tag = document.createElement("button"); tag.className = "lot"; tag.textContent = "商业地块"; tag.classList.add("estag"); overlay.appendChild(tag);
-    tag.onclick = (e) => { e.stopPropagation(); onPick(LOT_PLACE[id]); };
-    estates.push({ base, obj: null, sign, tag, key: "", ver: -1, tex: null });
-  }
+  type ES = { obj: THREE.Group | null; sign: THREE.Mesh; tag: HTMLButtonElement; key: string; ver: number; tex: THREE.Texture | null };
+  const estates = new Map<number, ES>();
+  const soldMat = new THREE.MeshBasicMaterial({ map: signTexOf("已售", "#5d6b63"), side: THREE.DoubleSide });
+  // 选中的格子：一个金色方框
+  const selBox = (() => { const g = new THREE.Group(); const m = new THREE.MeshBasicMaterial({ color: 0xe8a530 });
+    [[0, -CELL / 2, CELL, 0.25], [0, CELL / 2, CELL, 0.25], [-CELL / 2, 0, 0.25, CELL], [CELL / 2, 0, 0.25, CELL]].forEach(([dx, dz, w, d]) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, 0.2, d), m); b.position.set(dx, 0.15, dz); g.add(b); });
+    g.visible = false; scene.add(g); return g; })();
 
   /* ---- 拖动和缩放 ---- */
   let drag: { x: number; y: number; t: THREE.Vector3 } | null = null;
@@ -531,7 +512,7 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
     target.copy(drag.t).addScaledVector(new THREE.Vector3(1, 0, -1).normalize(), -dx * s).addScaledVector(new THREE.Vector3(1, 0, 1).normalize(), -dy * s * 1.35);
     target.x = Math.max(-150, Math.min(230, target.x)); target.z = Math.max(-128, Math.min(200, target.z)); placeCam();
   });
-  canvas.addEventListener("pointerup", (e) => { drag = null; if (downAt && Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) < 6) pickBoat(e.clientX, e.clientY); downAt = null; });
+  canvas.addEventListener("pointerup", (e) => { drag = null; if (downAt && Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) < 6) { if (!pickBoat(e.clientX, e.clientY)) pickCell(e.clientX, e.clientY); } downAt = null; });
   const setZoom = (z: number) => { zoom = Math.max(0.6, Math.min(3, z)); resize(); };
   canvas.addEventListener("wheel", (e) => { e.preventDefault(); setZoom(zoom * (e.deltaY < 0 ? 1.12 : 0.89)); }, { passive: false });
   let pinch: number | null = null;
@@ -575,8 +556,8 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
     labels.forEach((el) => project(el, +el.dataset.x!, 0.2, +el.dataset.z!, "-50%,-50%"));
     (Object.keys(pins) as PlaceId[]).forEach((k) => project(pins[k], PLACES[k].x, PLACES[k].h, PLACES[k].z));
     shopViews.forEach((v) => { if (!v.tag.hidden) project(v.tag, v.x, 3.2, v.z); });
-    lots.forEach((L, id) => { const { x, z } = plotPos(id); project(L.tag, x, L.house ? 4.2 : 1.8, z); });
-    estates.forEach((E, id) => { const { x, z } = estatePos(id); project(E.tag, x, E.obj ? 5.6 : 2.4, z); });
+    lots.forEach((L, id) => { const { x, z } = cellPos(id); project(L.tag, x, 4.2, z); });
+    estates.forEach((E, id) => { const { x, z } = cellPos(id); project(E.tag, x, E.obj ? 5.6 : 2.4, z); });
     raf = requestAnimationFrame(frame);
   };
   placeCam(); resize(); raf = requestAnimationFrame(frame);
@@ -598,34 +579,43 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
       });
     },
     setEstates(list) {
+      const seen = new Set(list.map((e) => e.id));
+      estates.forEach((E, id) => { if (!seen.has(id)) { if (E.obj) scene.remove(E.obj); scene.remove(E.sign); E.tag.remove(); E.tex?.dispose(); estates.delete(id); } });
       list.forEach((e) => {
-        const E = estates[e.id]; if (!E) return;
+        let E = estates.get(e.id);
+        const { x, z } = cellPos(e.id);
+        if (!E) {
+          const sign = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.2), soldMat); sign.quaternion.copy(cam.quaternion); scene.add(sign);
+          const tag = document.createElement("button"); tag.className = "lot estag sold"; overlay.appendChild(tag);
+          tag.onclick = (ev) => { ev.stopPropagation(); onPickCell(e.id); };
+          E = { obj: null, sign, tag, key: "", ver: -1, tex: null }; estates.set(e.id, E);
+        }
         const key = `${e.ownerName || ""}|${e.kind || ""}|${e.name || ""}`;
         if (E.key !== key) {
           E.key = key; if (E.obj) { scene.remove(E.obj); E.obj = null; }
-          const { x, z } = estatePos(e.id);
-          E.tag.textContent = e.kind ? `${EKINDS[e.kind].ic} ${e.name}` : e.ownerName ? `${e.ownerName}的地` : `商业地 ¥${(e.price / 10000).toFixed(0)}万`;
-          E.tag.classList.toggle("sold", !!e.ownerName);
+          E.tag.textContent = e.kind ? `${EKINDS[e.kind].ic} ${e.name}` : `${e.ownerName}的地`;
+          E.tag.classList.toggle("mine", !!e.mine);
           if (e.kind) {
             const k = EKINDS[e.kind], g = new THREE.Group(), col = M(k.color), h = e.kind === "market" ? 2.6 : e.kind === "gym" ? 3.4 : 2.4;
-            box(5, h, 4.2, mats.white, 0, 0, -0.4, g); box(5.2, 0.25, 4.4, col, 0, h, -0.4, g); box(4.6, 0.5, 0.14, col, 0, h - 0.7, 1.75, g);
-            box(1.8, 1.4, 0.06, mats.glass, -1.2, 0, 1.72, g); box(1.2, 1.5, 0.06, M(0x6b4a33), 1.2, 0, 1.72, g);
-            if (e.kind === "gym") box(5, 0.9, 0.06, mats.glass2, 0, 1.8, 1.72, g);
-            g.position.set(x, 0.14, z); scene.add(g); E.obj = g;
-            E.sign.position.set(x, h + 1.4, z); E.sign.scale.set(1.6, 1.6, 1);
-          } else { E.sign.position.set(x + 1.6, 1.4, z + 1.6); E.sign.scale.set(1, 1, 1); }
-          E.ver = -1; // 重新决定招牌
+            box(3.4, h, 3, mats.white, 0, 0, -0.2, g); box(3.6, 0.25, 3.2, col, 0, h, -0.2, g); box(3.2, 0.45, 0.12, col, 0, h - 0.6, 1.32, g);
+            box(1.2, 1.3, 0.06, mats.glass, -0.8, 0, 1.3, g); box(0.8, 1.4, 0.06, M(0x6b4a33), 0.9, 0, 1.3, g);
+            if (e.kind === "gym") box(3.4, 0.8, 0.06, mats.glass2, 0, 1.6, 1.3, g);
+            g.position.set(x, 0.1, z); scene.add(g); E.obj = g;
+            E.sign.position.set(x, h + 1.3, z); E.sign.scale.set(1.3, 1.3, 1);
+          } else { E.sign.position.set(x, 1.2, z); E.sign.scale.set(0.8, 0.8, 1); }
+          E.ver = -1;
         }
         const ver = e.kind ? e.sign : -2;
         if (E.ver === ver) return;
         E.ver = ver; E.tex?.dispose(); E.tex = null;
-        if (!e.kind) { E.sign.material = e.ownerName ? new THREE.MeshBasicMaterial({ map: signTexOf("已售", "#5d6b63"), side: THREE.DoubleSide }) : forSale; return; }
-        const k = EKINDS[e.kind];
-        const fallback = () => { const t = signTexOf(e.name || k.name, "#" + k.color.toString(16).padStart(6, "0")); E.tex = t; E.sign.material = new THREE.MeshBasicMaterial({ map: t, side: THREE.DoubleSide }); };
+        if (!e.kind) { E.sign.material = soldMat; return; }
+        const k = EKINDS[e.kind], EE = E;
+        const fallback = () => { const t = signTexOf(e.name || k.name, "#" + k.color.toString(16).padStart(6, "0")); EE.tex = t; EE.sign.material = new THREE.MeshBasicMaterial({ map: t, side: THREE.DoubleSide }); };
         if (!e.sign) return fallback();
-        loader.load(`/api/estates/${e.id}/sign?v=${e.sign}`, (tex) => { if (E.ver !== ver) return tex.dispose(); tex.colorSpace = THREE.SRGBColorSpace; E.tex = tex; E.sign.material = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide }); }, undefined, fallback);
+        loader.load(`/api/estates/${e.id}/sign?v=${e.sign}`, (tex) => { if (EE.ver !== ver) return tex.dispose(); tex.colorSpace = THREE.SRGBColorSpace; EE.tex = tex; EE.sign.material = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide }); }, undefined, fallback);
       });
     },
+    setCell(id) { if (id == null) { selBox.visible = false; return; } const { x, z } = cellPos(id); selBox.position.set(x, 0, z); selBox.visible = true; },
     setBoats(list) {
       list.forEach((b) => {
         const B = boats[b.id]; if (!B || B.ver === b.version) return;
@@ -639,13 +629,13 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
       });
     },
     setPlots(list) {
+      const seen = new Set(list.map((p) => p.id));
+      lots.forEach((L, id) => { if (!seen.has(id)) { scene.remove(L.house); L.tag.remove(); lots.delete(id); } });
       list.forEach((p) => {
-        const L = lots[p.id]; if (!L) return;
-        const key = p.ownerName ? `${p.ownerName}#${p.id}` : null;
-        if (key !== L.owner) { if (L.house) { scene.remove(L.house); L.house = null; } if (key) L.house = buildHouse(p.id, key); L.owner = key; }
-        L.sign.visible = !p.ownerName; L.base.material = p.mine ? lotMine : lotMat;
-        L.tag.textContent = p.ownerName ? `${p.mine ? "🔑 " : ""}${p.ownerName}家` : `${plotName(p.id)} ¥${Math.round(p.price / 1000)}k`;
-        L.tag.classList.toggle("sold", !!p.ownerName); L.tag.classList.toggle("mine", !!p.mine);
+        const key = `${p.ownerName}#${p.id}`; let L = lots.get(p.id);
+        if (L && L.key !== key) { scene.remove(L.house); L.tag.remove(); lots.delete(p.id); L = undefined; }
+        if (!L) { const tag = document.createElement("button"); tag.className = "lot sold"; tag.onclick = (ev) => { ev.stopPropagation(); onPickCell(p.id); }; overlay.appendChild(tag); L = { house: buildHouse(p.id, key), tag, key }; lots.set(p.id, L); }
+        L.tag.textContent = `${p.mine ? "🔑 " : ""}${p.ownerName}家`; L.tag.classList.toggle("mine", !!p.mine);
       });
     },
     setMine(id) { (Object.keys(pins) as PlaceId[]).forEach((k) => pins[k].classList.toggle("mine", k === id)); },

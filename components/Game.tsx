@@ -1,9 +1,10 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createCity, type City, type Other } from "../lib/city";
-import { plotName, type Plot } from "../lib/plots";
+import type { Plot } from "../lib/plots";
+import { allParcels, parcelName, parcelOf, MAX_HOUSES } from "../lib/grid";
 import { AD_DAYS, AD_PRICE, BOAT_COUNT, boatName, type Boat } from "../lib/boats";
-import { EKINDS, MAX_STAFF, SHIFT_MINS, WAGE_MAX, WAGE_MIN, estateAt, estateName, estatePlace, perDay, type Estate, type EstateKind } from "../lib/estates";
+import { EKINDS, MAX_STAFF, SHIFT_MINS, WAGE_MAX, WAGE_MIN, estateName, estatePlace, estatePrice, perDay, type Estate, type EstateKind } from "../lib/estates";
 import { DEPOSIT, KINDS, SLOTS, npcPerHour, slotAt, type Shop, type ShopKind } from "../lib/shops";
 import { actsAt, homeOf, isHome, HOMES, GIGS, gigHint, jobTitle, lvOf, nextLvXp, LV_XP, weeklyCost, GIFT_AMOUNTS, JOBS, NPCS, PLACES, act, clock, coopable, isState, mood, newGame, travel, trip, SKILLS, skillMax, skillPer, LICENSE_LV, skillLv, type SkillId, type JobId, type PlaceId, type State } from "../lib/game";
 
@@ -19,6 +20,7 @@ export default function Game() {
   const [user, setUser] = useState<User | null | undefined>(undefined);
   const [s, setS] = useState<State | null>(null);
   const [sel, setSel] = useState<PlaceId | null>(null);
+  const [cell, setCell] = useState<number | null>(null);
   const [panel, setPanel] = useState<"friends" | "log" | "help" | "chat" | "auth" | "skills" | "estates" | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [others, setOthers] = useState<Record<string, Other>>({});
@@ -47,7 +49,7 @@ export default function Game() {
   // 地图
   useEffect(() => {
     if (!mapRef.current) return;
-    city.current = createCity(mapRef.current, (id) => { setSel(id); setPeer(null); city.current?.focus(id); }, (id) => { setPeer(id); setSel(null); }, (id) => { setBoatSel(id); });
+    city.current = createCity(mapRef.current, (id) => { setSel(id); setCell(null); setPeer(null); city.current?.focus(id); }, (id) => { setPeer(id); setSel(null); setCell(null); }, (id) => { setBoatSel(id); }, (id) => { setCell(id); setSel(null); setPeer(null); });
     return () => city.current?.dispose();
   }, [say]);
 
@@ -87,6 +89,7 @@ export default function Game() {
   }, [user, api, say]);
 
   // 地块：进来先拉一次，之后每 20 秒刷新，看看别人买了哪块
+  useEffect(() => { city.current?.setCell(cell); }, [cell]);
   useEffect(() => { loadPlots(); const h = setInterval(loadPlots, 20000); return () => clearInterval(h); }, [loadPlots, user]);
   useEffect(() => { city.current?.setPlots(plots); }, [plots]);
   useEffect(() => { loadBoats(); const h = setInterval(loadBoats, 30000); return () => clearInterval(h); }, [loadBoats, user]);
@@ -204,8 +207,7 @@ export default function Game() {
       </header>
 
       <nav className="chips">
-        <button className="pill" onClick={() => { setSel("sjxc"); setPeer(null); city.current?.focus("sjxc"); }}>🏘️ 松江买地 · 余{plots.filter((p) => !p.ownerName).length}块</button>
-        <button className="pill" onClick={() => setPanel(panel === "estates" ? null : "estates")}>🏗️ 商业地块 · 余{estates.filter((e) => !e.ownerName).length}块</button>
+        <button className="pill" onClick={() => setPanel(panel === "estates" ? null : "estates")}>🏗️ 买地 · 余{allParcels().length - plots.length - estates.length}格</button>
         <button className="pill" onClick={() => setPanel(panel === "skills" ? null : "skills")}>🎯 能力</button>
         <button className="pill" onClick={() => setPanel(panel === "chat" ? null : "chat")}>💬 聊天</button>
         <button className="pill" onClick={() => setPanel(panel === "friends" ? null : "friends")}>🤝 朋友</button>
@@ -235,26 +237,8 @@ export default function Game() {
           <p>{PLACES[sel].desc}</p>
           {here.length > 0 && <p className="sub">这里还有：{here.map((o) => o.name).join("、")}</p>}
           {slotAt(sel) >= 0 && shops[slotAt(sel)] && <ShopBox shop={shops[slotAt(sel)]} here={!!s && s.at === sel} user={user} money={s?.money ?? 0} busy={busy} onOp={(b) => shopOp(slotAt(sel), b)} onLogin={() => setPanel("auth")} />}
-          {estateAt(sel) >= 0 && estates[estateAt(sel)] && <EstateBox id={estateAt(sel)} estates={estates} me={me} s={s} user={user} busy={busy} onOp={estateOp} onLogin={() => setPanel("auth")} onSay={say} reload={loadEstates} />}
-          {sel === "sjxc" && (
-            <div className="plots">
-              <p className="sub">在售 {plots.filter((p) => !p.ownerName).length} / {plots.length} 块。买下就能住，不用交房租；每人限购一块，转卖回收九成。</p>
-              <div className="lotgrid">{plots.map((p) => {
-                const can = !!user && !!s && s.at === "sjxc" && s.ownPlot == null && !p.ownerName;
-                return (
-                  <button key={p.id} className={"lotbtn" + (p.ownerName ? " sold" : "") + (p.mine ? " mine" : "")} disabled={!can || busy || s!.money < p.price}
-                    onClick={async () => { setBusy(true); const d = await api({ op: "buy", id: p.id }); setBusy(false); loadPlots(); if (d) after(d.state, d.label); }}
-                    title={p.ownerName ? `${plotName(p.id)} · ${p.ownerName}家` : `${plotName(p.id)} · ¥${p.price.toLocaleString()}`}>
-                    <b>{plotName(p.id)}</b><span>{p.ownerName ? (p.mine ? "🔑 我家" : p.ownerName) : `¥${(p.price / 10000).toFixed(1)}万`}</span>
-                  </button>);
-              })}</div>
-              {!user && <p className="sub">登录后才能买地。</p>}
-              {user && s && s.at !== "sjxc" && s.ownPlot == null && <p className="sub">先坐过来，才能买地。</p>}
-              {user && s?.ownPlot != null && (sellAsk
-                ? <div className="row2"><span className="sub">卖掉{plotName(s.ownPlot)}，到手九成？</span><button className="btn ghost" onClick={() => setSellAsk(false)}>算了</button><button className="btn primary" disabled={busy} onClick={async () => { setSellAsk(false); setBusy(true); await api({ op: "sell" }); setBusy(false); loadPlots(); }}>确定卖</button></div>
-                : <button className="link" onClick={() => setSellAsk(true)}>卖掉我的地</button>)}
-            </div>
-          )}
+          {(() => { const near = allParcels().filter((p) => p.place === sel); if (!near.length) return null; const sold = new Set([...plots.map((p) => p.id), ...estates.map((e) => e.id)]); const free = near.filter((p) => !sold.has(p.id));
+            return <p className="sub">🏗️ 附近有 {free.length} 格空地在卖（住宅 {free.filter((p) => p.use === "res").length}、商业 {free.filter((p) => p.use === "com").length}），¥{(Math.min(...near.map((p) => p.price)) / 10000).toFixed(1)}万起。点地图上淡黄（住宅）或淡蓝（商业）的格子看看。</p>; })()}
           {!s ? <p className="sub">先在下面起个名字，开始游戏。</p> : s.at !== sel ? (
             <button className="go" disabled={busy} onClick={() => go({ op: "travel", to: sel })}>{s.money < trip(s.at, sel).cost && sel === homeOf(s) ? `🚶 没钱坐地铁，走回家 · ${Math.round(trip(s.at, sel).mins * 3 / 60)}小时` : `🚇 坐过去 · ¥${trip(s.at, sel).cost} · ${trip(s.at, sel).mins}分钟`}</button>
           ) : (
@@ -267,16 +251,28 @@ export default function Game() {
         </aside>
       )}
 
+      {cell != null && !sel && (
+        <aside className="sheet">
+          <button className="x" aria-label="关闭" onClick={() => setCell(null)}>✕</button>
+          <LandBox id={cell} plots={plots} estates={estates} me={me} s={s} user={user} busy={busy} onLogin={() => setPanel("auth")} onSay={say} reload={() => { loadEstates(); loadPlots(); }}
+            onEstate={estateOp} onHouse={async (b) => { setBusy(true); const d = await api(b); setBusy(false); loadPlots(); if (d) after(d.state, d.label); }}
+            onGo={(pl) => go({ op: "travel", to: pl })} />
+        </aside>
+      )}
+
       {panel && (
         <aside className="panel">
           <button className="x" aria-label="关闭" onClick={() => setPanel(null)}>✕</button>
           {panel === "auth" && <Auth xOn={xOn} onDone={(u) => { setUser(u); setPanel(null); say(`欢迎，${u.name}`); }} />}
-          {panel === "estates" && <><h2>商业地块</h2><p className="muted">全市 12 块，地段越好越贵、客流越大。每人最多买 2 块，要坐到那里才能买。点一块去看看。</p>
-            {estates.map((e) => { const pl = estatePlace(e.id); return (
-              <button key={e.id} className="act" onClick={() => { setPanel(null); setSel(pl); setPeer(null); city.current?.focus(pl); }}>
-                <span>{PLACES[pl].ic} {PLACES[pl].name}{e.kind ? ` · ${EKINDS[e.kind].ic}「${e.name}」` : ""}</span>
-                <small>{e.ownerName ? (e.mine ? "我的" : `${e.ownerName}的`) : `¥${e.price.toLocaleString()} 待售`}{e.openings > e.staff.length ? " · 在招人" : ""}</small>
-              </button>); })}</>}
+          {panel === "estates" && <><h2>买地</h2><p className="muted">地图上淡黄的格子是住宅地，淡蓝的是商业地，都挨着某个地点；人到了那个地点就能买。价格看区和地段：市中心最贵，临江、挨着主干道、靠地铁更贵。住宅地每人最多 {MAX_HOUSES} 格（买了就能住，不交房租），商业地最多 2 格（盖店、挂招牌、雇人）。</p>
+            {(() => { const mine = [...plots.filter((p) => p.mine).map((p) => ({ id: p.id, t: "🏠 我的房子" })), ...estates.filter((e) => e.mine).map((e) => ({ id: e.id, t: e.kind ? `${EKINDS[e.kind].ic}「${e.name}」` : "🏗️ 我的商业地" }))];
+              const hiring = estates.filter((e) => e.kind && e.openings > e.staff.length && !e.mine);
+              return <>
+                {mine.length > 0 && <h2 style={{ marginTop: 8 }}>我的地</h2>}
+                {mine.map((m) => <button key={m.id} className="act" onClick={() => { setPanel(null); setCell(m.id); setSel(null); city.current?.focus(parcelOf(m.id)?.place ?? "home"); }}><span>{m.t}</span><small>{parcelName(m.id)}</small></button>)}
+                {hiring.length > 0 && <h2 style={{ marginTop: 8 }}>在招人的店</h2>}
+                {hiring.map((e) => <button key={e.id} className="act" onClick={() => { setPanel(null); setCell(e.id); setSel(null); city.current?.focus(estatePlace(e.id)); }}><span>{EKINDS[e.kind!].ic}「{e.name}」· 日薪¥{e.wage}</span><small>{PLACES[estatePlace(e.id)].name}旁 · 缺 {e.openings - e.staff.length} 人</small></button>)}
+              </>; })()}</>}
           {panel === "skills" && s && <><h2>能力</h2><p className="muted">驾驶最高 20 级、每级 +0.1%；其他能力最高 50 级、每级 +4%。</p>
             {(Object.keys(SKILLS) as SkillId[]).map((k) => { const v = skillLv(s.sk?.[k] || 0, skillMax(k)), sk = SKILLS[k]; return (
               <div key={k} style={{ margin: "10px 0" }}>
@@ -285,7 +281,7 @@ export default function Game() {
                 <div style={{ height: 6, background: "#0001", borderRadius: 3, margin: "4px 0" }}><div style={{ height: 6, borderRadius: 3, background: "#e0533d", width: `${v.need ? (v.into / v.need) * 100 : 100}%` }} /></div>
                 <div className="muted" style={{ fontSize: 12 }}>{v.need ? `再 ${v.need - v.into} 点升级 · ` : "已满级 · "}怎么练：{sk.how}。作用：{sk.use}。</div>
               </div>); })}</>}
-          {panel === "help" && <><h2>怎么玩</h2><p>拖动地图看看上海，滚轮或右下角按钮缩放。点建筑上的图标查看能做啥，不在那里就先坐地铁过去，过江更贵。</p><p>上班赚钞票，吃饭困觉保持状态，多和人来往交朋友。每30天交一次房租，亭子间¥2,800；有钱了可以去看房搬家，好房子睡得更香，但房租也更贵。去张江面试能换高薪工作。</p><p>登录后存档会存在云端，还能在地图上看到其他玩家、聊天、点名字牌向对方挥手。</p></>}
+          {panel === "help" && <><h2>怎么玩</h2><p>拖动地图看看上海，滚轮或右下角按钮缩放。点建筑上的图标查看能做啥，不在那里就先坐地铁过去，过江更贵。</p><p>上班赚钞票，吃饭困觉保持状态，多和人来往交朋友。每30天交一次房租，亭子间¥2,800；有钱了可以去看房搬家，好房子睡得更香，但房租也更贵。去张江面试能换高薪工作。</p><p>地图按 300 米一格划分。淡黄的格子是住宅地、淡蓝的是商业地，点一格就能看价格；人到旁边的地点就能买。买住宅地自动盖房，搬进去就不用交房租；商业地可以盖健身房、咖啡馆、超市、服装店，挂招牌、雇玩家。</p><p>登录后存档会存在云端，还能在地图上看到其他玩家、聊天、点名字牌向对方挥手。</p></>}
           {panel === "log" && <><h2>日脚</h2>{s ? s.log.map(([t, x], i) => <p key={i}><span className="t">{t}</span>{x}</p>) : <p>先开始游戏吧。</p>}</>}
           {panel === "friends" && <><h2>朋友</h2>{s && Object.keys(s.friends).length ? Object.entries(s.friends).map(([k, v]) => <p key={k}>{NPCS[k].name} <span className="t">· {v >= 60 ? "好朋友" : v >= 30 ? "熟人" : "认得"} {v}</span></p>) : <p>还没认得人。去城隍庙、武康路或永康路转转。</p>}
             {s?.pals && Object.keys(s.pals).length > 0 && <><h2 style={{ marginTop: 8 }}>玩家朋友</h2>{Object.entries(s.pals).map(([k, v]) => <p key={k}>{v.name} <span className="t">· 一起做过 {v.n} 次事{others[k] ? " · 在线" : ""}</span></p>)}</>}
@@ -531,7 +527,7 @@ function EstateBox({ id, estates, me, s, user, busy, onOp, onLogin, onSay, reloa
   const [up, setUp] = useState(false);
   const place = estatePlace(id), here = s?.at === place;
   const myJob = estates.find((e) => e.staff.some((x) => x.id === me));
-  const e = estates[id];
+  const e: Estate = estates.find((x) => x.id === id) ?? { id, price: estatePrice(id), ownerName: null, kind: null, name: null, sell: null, wage: null, openings: 0, staff: [], sign: 0 };
   useEffect(() => { if (e?.sell) setPrice(e.sell); if (e?.wage) setWage(e.wage); if (e) setOpenings(e.openings); setAsk(false); }, [e?.id, e?.sell, e?.wage, e?.openings]);
   const upload = async (f: File) => {
     if (!e) return; setUp(true);
@@ -546,14 +542,14 @@ function EstateBox({ id, estates, me, s, user, busy, onOp, onLogin, onSay, reloa
     <div className="plots">
       {myJob && myJob.id !== id && <p className="sub">💼 侬在{PLACES[estatePlace(myJob.id)].name}的「{myJob.name}」打工。</p>}
       {e && <div className={"shop" + (e.mine ? " mine" : "")}>
-        <b>🏗️ {estateName(e.id)}{e.kind ? ` · ${EKINDS[e.kind].name}「${e.name}」` : ""}</b>
+        <b>{e.kind ? `${EKINDS[e.kind].ic} ${EKINDS[e.kind].name}「${e.name}」` : e.ownerName ? `${e.ownerName}的商业地` : `空地 · ¥${e.price.toLocaleString()}`}</b>
         {e.kind && e.sign > 0 && <img className="adimg" style={{ cursor: "zoom-in" }} src={`/api/estates/${e.id}/sign?v=${e.sign}`} alt={`${e.name}的招牌`} onClick={() => setBig(true)} />}
         {big && <div className="lightbox" role="dialog" aria-label="招牌" onClick={() => setBig(false)}><div className="lbcard"><img className="adimg" src={`/api/estates/${e.id}/sign?v=${e.sign}`} alt={`${e.name}的招牌`} /><p className="sub">{e.ownerName} 的{EKINDS[e.kind!].name}「{e.name}」</p>
           {user && !e.mine && <button className="link" onClick={async (ev) => { ev.stopPropagation(); const r = await fetch(`/api/estates/${e.id}/report`, { method: "POST" }); const d = (await r.json().catch(() => ({}))) as any; onSay(d.error || d.toast); }}>举报这张招牌</button>}</div></div>}
 
         {!e.ownerName && <p className="sub">地价¥{e.price.toLocaleString()}。买下后可盖健身房、咖啡馆、超市或服装店，挂自己的招牌、雇玩家打工；按真实时间自动有客人。每人最多 2 块。</p>}
         {!e.ownerName && (!user ? <button className="btn primary" onClick={onLogin}>登录后买地</button>
-          : <button className="btn primary" disabled={busy || !here || (s?.money ?? 0) < e.price} onClick={() => onOp(e.id, { op: "buy" })}>{!here ? "先坐到这里才能买" : (s?.money ?? 0) < e.price ? `钞票不够（要¥${e.price.toLocaleString()}）` : `¥${e.price.toLocaleString()} 买下`}</button>)}
+          : <button className="btn primary" disabled={busy || !here || (s?.money ?? 0) < e.price} onClick={() => onOp(e.id, { op: "buy" })}>{!here ? `先到${PLACES[place].name}才能买` : (s?.money ?? 0) < e.price ? `钞票不够（要¥${e.price.toLocaleString()}）` : `¥${e.price.toLocaleString()} 买下`}</button>)}
 
         {e.ownerName && !e.mine && !e.kind && <p className="sub">{e.ownerName} 买下了，还没开工。</p>}
 
@@ -563,7 +559,7 @@ function EstateBox({ id, estates, me, s, user, busy, onOp, onLogin, onSay, reloa
           <p className="sub">{EKINDS[kind].desc} · 每天运营成本¥{EKINDS[kind].upkeep}</p>
           <input id="estate-name" value={name} maxLength={12} onChange={(ev) => setName(ev.target.value)} placeholder="店名，比如：阿明健身" />
           <label className="pricerow">售价 ¥<input id="estate-price" type="number" min={1} value={price} onChange={(ev) => setPrice(Math.round(Number(ev.target.value)))} /><span className="sub">参考价¥{EKINDS[kind].ref} · 预计每天净赚约¥{perDay(e.id, kind, price || 1, 0)}</span></label>
-          <button className="btn primary" disabled={busy || !here || (s?.money ?? 0) < EKINDS[kind].build || !name.trim()} onClick={() => onOp(e.id, { op: "build", kind, name, price })}>{!here ? "先坐到这里才能开工" : (s?.money ?? 0) < EKINDS[kind].build ? `钞票不够（要¥${EKINDS[kind].build.toLocaleString()}）` : `付¥${EKINDS[kind].build.toLocaleString()} 开工`}</button>
+          <button className="btn primary" disabled={busy || !here || (s?.money ?? 0) < EKINDS[kind].build || !name.trim()} onClick={() => onOp(e.id, { op: "build", kind, name, price })}>{!here ? `先到${PLACES[place].name}才能开工` : (s?.money ?? 0) < EKINDS[kind].build ? `钞票不够（要¥${EKINDS[kind].build.toLocaleString()}）` : `付¥${EKINDS[kind].build.toLocaleString()} 开工`}</button>
           <button className="link" disabled={busy || !here} onClick={() => onOp(e.id, { op: "sell" })}>空地转卖（回收六成）</button>
         </>}
 
@@ -588,7 +584,7 @@ function EstateBox({ id, estates, me, s, user, busy, onOp, onLogin, onSay, reloa
           <label className="pricerow">日薪 ¥<input id="estate-wage" type="number" min={WAGE_MIN} max={WAGE_MAX} value={wage} onChange={(ev) => setWage(Math.round(Number(ev.target.value)))} />岗位<select id="estate-openings" value={openings} onChange={(ev) => setOpenings(Number(ev.target.value))}>{Array.from({ length: MAX_STAFF + 1 }, (_, i) => <option key={i} value={i}>{i}</option>)}</select><button className="btn ghost" disabled={busy} onClick={() => onOp(e.id, { op: "hire", wage, openings })}>保存</button></label>
           {e.staff.length > 0 && <div className="row2">{e.staff.map((x) => <span key={x.id} className="sub">👤 {x.name} <button className="link" disabled={busy} onClick={() => onOp(e.id, { op: "fire", uid: x.id })}>解雇</button></span>)}</div>}
           <div className="row2">
-            <button className="btn primary" disabled={busy || !here} onClick={() => onOp(e.id, { op: "collect" })}>{here ? "收账" : "到这里才能收账"}</button>
+            <button className="btn primary" disabled={busy || !here} onClick={() => onOp(e.id, { op: "collect" })}>{here ? "收账" : `到${PLACES[place].name}才能收账`}</button>
             {ask ? <><span className="sub">连地带店卖掉，回收地价六成、造价三成？</span><button className="btn ghost" onClick={() => setAsk(false)}>算了</button><button className="btn ghost" disabled={busy || !here} onClick={async () => { setAsk(false); await onOp(e.id, { op: "sell" }); }}>卖掉</button></>
               : <button className="link" onClick={() => setAsk(true)}>卖掉</button>}
           </div>
@@ -596,4 +592,37 @@ function EstateBox({ id, estates, me, s, user, busy, onOp, onLogin, onSay, reloa
       </div>}
     </div>
   );
+}
+
+// 点地图上的一格：住宅地买来住，商业地交给 EstateBox
+function LandBox({ id, plots, estates, me, s, user, busy, onLogin, onSay, reload, onEstate, onHouse, onGo }: {
+  id: number; plots: Plot[]; estates: Estate[]; me: string | null; s: State | null; user: User | null | undefined; busy: boolean;
+  onLogin: () => void; onSay: (t: string) => void; reload: () => void; onEstate: (id: number, b: Record<string, unknown>) => Promise<boolean | undefined>;
+  onHouse: (b: Record<string, unknown>) => void; onGo: (p: PlaceId) => void;
+}) {
+  const [ask, setAsk] = useState(false);
+  const pc = parcelOf(id);
+  useEffect(() => setAsk(false), [id]);
+  if (!pc) return <p className="sub">这一格不能买。</p>;
+  const place = pc.place, here = s?.at === place, house = plots.find((p) => p.id === id);
+  return <>
+    <h2>{pc.use === "com" ? "🏬" : "🏠"} {parcelName(id)}</h2>
+    <p className="sub">{pc.district}区 · {pc.use === "com" ? "商业用地" : "住宅用地"} · 挨着{PLACES[place].name}{here ? "（侬在这里）" : ""}</p>
+    {pc.use === "com" ? <EstateBox id={id} estates={estates} me={me} s={s} user={user} busy={busy} onOp={onEstate} onLogin={onLogin} onSay={onSay} reload={reload} />
+      : house ? <div className={"shop" + (house.mine ? " mine" : "")}>
+          <b>{house.mine ? "🔑 我的房子" : `${house.ownerName}家`}</b>
+          {house.mine && <>
+            <p className="sub">{s?.ownPlot === id ? "侬现在住在这里，到" + PLACES[place].name + "就能在家睡觉做饭。" : `还没住进来：到${PLACES[place].name}点“搬进自己的房子”。`}</p>
+            {ask ? <div className="row2"><span className="sub">卖掉回收九成（¥{Math.round(pc.price * 0.9).toLocaleString()}）？</span><button className="btn ghost" onClick={() => setAsk(false)}>算了</button><button className="btn primary" disabled={busy} onClick={() => { setAsk(false); onHouse({ op: "sell", id }); }}>确定卖</button></div>
+              : <button className="link" onClick={() => setAsk(true)}>卖掉这块地</button>}
+          </>}
+        </div>
+      : <div className="shop">
+          <b>空地 · ¥{pc.price.toLocaleString()}</b>
+          <p className="sub">买下自动盖一栋小房子，可以搬进来住，不用再交房租；在家睡觉精力恢复更多。每人最多 {MAX_HOUSES} 格住宅地，转卖回收九成。</p>
+          {!user ? <button className="btn primary" onClick={onLogin}>登录后买地</button>
+            : <button className="btn primary" disabled={busy || !here || (s?.money ?? 0) < pc.price} onClick={() => onHouse({ op: "buy", id })}>{!here ? `先到${PLACES[place].name}才能买` : (s?.money ?? 0) < pc.price ? `钞票不够（要¥${pc.price.toLocaleString()}）` : `¥${pc.price.toLocaleString()} 买下`}</button>}
+        </div>}
+    {s && !here && <button className="go" disabled={busy} onClick={() => onGo(place)}>🚇 去{PLACES[place].name} · ¥{trip(s.at, place).cost} · {trip(s.at, place).mins}分钟</button>}
+  </>;
 }
