@@ -5,7 +5,8 @@ import { SYS } from "../../../lib/ledger";
 export async function GET(req: Request) {
   const { DB } = await env();
   const user = await userFromToken(DB, readCookie(req.headers.get("cookie"), SESSION_COOKIE));
-  const accounts = (await DB.prepare("SELECT id, name, balance FROM accounts").all<{ id: string; name: string; balance: number }>()).results;
+  // 普通玩家只看得到市场账户；市政府账户只有管理员能看
+  const accounts = (await DB.prepare("SELECT id, name, balance FROM accounts WHERE id = 'market'").all<{ id: string; name: string; balance: number }>()).results;
   if (!user) return json({ accounts, rows: [] });
   const rows = (await DB.prepare("SELECT ts, src, dst, amount, memo FROM ledger WHERE src = ? OR dst = ? ORDER BY id DESC LIMIT 30").bind(user.id, user.id).all<{ ts: number; src: string; dst: string; amount: number; memo: string }>()).results;
   const ids = [...new Set(rows.flatMap((r) => [r.src, r.dst]).filter((x) => x !== user.id && !(x in SYS)))];

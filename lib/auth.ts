@@ -60,3 +60,7 @@ export function sessionCookie(token: string, maxAge: number) {
 export function json(data: unknown, status = 200, headers: Record<string, string> = {}) {
   return new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json", "cache-control": "no-store", ...headers } });
 }
+
+// 管理员：邮箱写在 Cloudflare 加密变量 ADMIN_EMAILS 里（逗号分隔），不进代码仓库
+export const isAdminUser = (e: unknown, user: User | null) =>
+  !!user && String((e as { ADMIN_EMAILS?: string }).ADMIN_EMAILS || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean).includes(user.email.toLowerCase());

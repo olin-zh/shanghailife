@@ -21,7 +21,7 @@ export default function Game() {
   const [s, setS] = useState<State | null>(null);
   const [sel, setSel] = useState<PlaceId | null>(null);
   const [cell, setCell] = useState<number | null>(null);
-  const [panel, setPanel] = useState<"friends" | "log" | "help" | "chat" | "auth" | "skills" | "estates" | "money" | null>(null);
+  const [panel, setPanel] = useState<"friends" | "log" | "help" | "chat" | "auth" | "skills" | "estates" | "money" | "admin" | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [others, setOthers] = useState<Record<string, Other>>({});
   const [chats, setChats] = useState<Chat[]>([]);
@@ -58,7 +58,7 @@ export default function Game() {
     let local: State | null = null;
     try { const x = JSON.parse(localStorage.getItem(LOCAL) || "null"); if (isState(x)) local = x; } catch {}
     setS(local);
-    fetch("/api/auth/me").then((r) => r.json() as Promise<any>).then((d) => { setUser(d.user ?? null); setXOn(!!d.x); }).catch(() => setUser(null));
+    fetch("/api/auth/me").then((r) => r.json() as Promise<any>).then((d) => { setUser(d.user ?? null); setXOn(!!d.x); setIsAdmin(!!d.admin); }).catch(() => setUser(null));
     const le = new URLSearchParams(location.search).get("login_error");
     if (le) { say(({ x_off: "X 登录还没开通", x_cancel: "侬取消了 X 登录", x_state: "登录超时了，请再试一次", x_token: "X 授权失败，请再试一次", x_user: "读取 X 账号信息失败" } as Record<string, string>)[le] || "登录失败"); history.replaceState(null, "", "/"); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -210,6 +210,7 @@ export default function Game() {
         <button className="pill" onClick={() => setPanel(panel === "estates" ? null : "estates")}>🏗️ 买地 · 余{allParcels().length - plots.length - estates.length}格</button>
         <button className="pill" onClick={() => setPanel(panel === "skills" ? null : "skills")}>🎯 能力</button>
         <button className="pill" onClick={() => setPanel(panel === "money" ? null : "money")}>💰 账本</button>
+        {isAdmin && <button className="pill" onClick={() => setPanel(panel === "admin" ? null : "admin")}>🛠️ 管理</button>}
         <button className="pill" onClick={() => setPanel(panel === "chat" ? null : "chat")}>💬 聊天</button>
         <button className="pill" onClick={() => setPanel(panel === "friends" ? null : "friends")}>🤝 朋友</button>
         <button className="pill" onClick={() => setPanel(panel === "log" ? null : "log")}>📜 日脚</button>
@@ -275,6 +276,7 @@ export default function Game() {
                 {hiring.map((e) => <button key={e.id} className="act" onClick={() => { setPanel(null); setCell(e.id); setSel(null); city.current?.focus(estatePlace(e.id)); }}><span>{EKINDS[e.kind!].ic}「{e.name}」· 日薪¥{e.wage}</span><small>{PLACES[estatePlace(e.id)].name}旁 · 缺 {e.openings - e.staff.length} 人</small></button>)}
               </>; })()}</>}
           {panel === "money" && <LedgerBox user={user} s={s} />}
+          {panel === "admin" && isAdmin && <AdminBox onSay={say} />}
           {panel === "skills" && s && <><h2>能力</h2><p className="muted">驾驶最高 20 级、每级 +0.1%；其他能力最高 50 级、每级 +4%。</p>
             {(Object.keys(SKILLS) as SkillId[]).map((k) => { const v = skillLv(s.sk?.[k] || 0, skillMax(k)), sk = SKILLS[k]; return (
               <div key={k} style={{ margin: "10px 0" }}>
@@ -637,10 +639,36 @@ function LedgerBox({ user, s }: { user: User | null | undefined; s: State | null
   return <>
     <h2>账本</h2>
     <p className="muted">钱不会凭空出现或消失：工资、吃饭、房租都和“市场”结算；买地、收税、落户补贴走“市政府”。所有收入先扣 10% 税。</p>
-    {d?.accounts.map((a) => <p key={a.id}>{a.id === "gov" ? "🏛️" : "🏪"} {a.name}账户 <b>¥{a.balance.toLocaleString()}</b></p>)}
     {s && <p className="sub">侬累计交税 ¥{(s.taxPaid || 0).toLocaleString()}{s.deposit ? ` · 租房押金 ¥${s.deposit.toLocaleString()}` : ""}</p>}
     <h2 style={{ marginTop: 8 }}>我的流水</h2>
     {!user ? <p>登录后才有账本记录。</p> : !d?.rows.length ? <p>还没有记录。</p> : d.rows.map((r, i) => (
       <p key={i}><span className="t">{new Date(r.ts).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span> <b style={{ color: r.amount < 0 ? "var(--red)" : "var(--green)" }}>{r.amount > 0 ? "+" : ""}{r.amount.toLocaleString()}</b> {r.amount < 0 ? "付给" : "来自"}{r.with} · {r.memo}</p>))}
+  </>;
+}
+
+// 管理员后台：系统账户、全服流水、调整市政府储备、下架店招牌
+function AdminBox({ onSay }: { onSay: (t: string) => void }) {
+  type D = { accounts: { id: string; name: string; balance: number }[]; players: { n: number; money: number }; minted: number; rows: { ts: number; from: string; to: string; amount: number; memo: string }[]; signs: { id: number; owner_name: string; name: string | null; sign_ver: number }[] };
+  const [d, setD] = useState<D | null>(null);
+  const [amt, setAmt] = useState(1000000);
+  const [memo, setMemo] = useState("");
+  const load = useCallback(() => { fetch("/api/admin").then((r) => r.json() as Promise<any>).then((x) => { if (x.error) onSay(x.error); else setD(x); }).catch(() => {}); }, [onSay]);
+  useEffect(load, [load]);
+  const post = async (b: Record<string, unknown>) => { const r = await fetch("/api/admin", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) }); const x = (await r.json().catch(() => ({}))) as any; onSay(x.error || x.toast); load(); };
+  if (!d) return <p>读取中…</p>;
+  const total = d.accounts.reduce((a, x) => a + x.balance, 0) + d.players.money;
+  return <>
+    <h2>管理后台</h2>
+    {d.accounts.map((a) => <p key={a.id}>{a.id === "gov" ? "🏛️" : "🏪"} {a.name} <b>¥{a.balance.toLocaleString()}</b></p>)}
+    <p>👥 玩家 {d.players.n} 人，手上共 <b>¥{Math.round(d.players.money).toLocaleString()}</b></p>
+    <p className="sub">全服货币总量 ¥{Math.round(total).toLocaleString()} · 管理员累计增发 ¥{d.minted.toLocaleString()}（另含开服储备 ¥10,000,000）</p>
+    <h2 style={{ marginTop: 8 }}>调整市政府储备</h2>
+    <label className="pricerow">金额 ¥<input id="admin-amt" type="number" value={amt} onChange={(e) => setAmt(Math.round(Number(e.target.value)))} /></label>
+    <input id="admin-memo" value={memo} maxLength={40} onChange={(e) => setMemo(e.target.value)} placeholder="说明，比如：开新区增发" />
+    <div className="row2"><button className="btn primary" onClick={() => post({ op: "mint", amount: Math.abs(amt), memo })}>增发</button><button className="btn ghost" onClick={() => post({ op: "mint", amount: -Math.abs(amt), memo })}>回收</button></div>
+    <h2 style={{ marginTop: 8 }}>店招牌（{d.signs.length}）</h2>
+    {d.signs.map((g) => <div key={g.id} style={{ marginBottom: 8 }}><img className="adimg" src={`/api/estates/${g.id}/sign?v=${g.sign_ver}`} alt={`${g.owner_name}的招牌`} /><div className="row2"><span className="sub">{g.owner_name} ·「{g.name || "未开张"}」</span><button className="btn ghost" onClick={() => post({ op: "sign_off", id: g.id })}>下架</button></div></div>)}
+    <h2 style={{ marginTop: 8 }}>全服流水（最近 100 笔）</h2>
+    {d.rows.map((r, i) => <p key={i}><span className="t">{new Date(r.ts).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span> {r.from} → {r.to} <b>¥{r.amount.toLocaleString()}</b> · {r.memo}</p>)}
   </>;
 }
