@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createCity, type City, type Other } from "../lib/city";
+import { plotName, type Plot } from "../lib/plots";
 import { actsAt, homeOf, isHome, HOMES, GIFT_AMOUNTS, JOBS, NPCS, PLACES, act, clock, coopable, isState, mood, newGame, travel, trip, type JobId, type PlaceId, type State } from "../lib/game";
 
 type User = { id: string; email: string; name: string };
@@ -23,6 +24,9 @@ export default function Game() {
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const [peer, setPeer] = useState<string | null>(null);
   const [xOn, setXOn] = useState(false);
+  const [plots, setPlots] = useState<Plot[]>([]);
+  const [sellAsk, setSellAsk] = useState(false);
+  const loadPlots = useCallback(() => { fetch("/api/plots").then((r) => r.json() as Promise<any>).then((d) => { if (Array.isArray(d.plots)) setPlots(d.plots); }).catch(() => {}); }, []);
   const [offer, setOffer] = useState<Offer | null>(null);
   const send = (m: unknown) => ws.current?.readyState === 1 && ws.current.send(JSON.stringify(m));
 
@@ -69,6 +73,10 @@ export default function Game() {
       else setS(null);
     }).catch(() => {});
   }, [user, api, say]);
+
+  // 地块：进来先拉一次，之后每 20 秒刷新，看看别人买了哪块
+  useEffect(() => { loadPlots(); const h = setInterval(loadPlots, 20000); return () => clearInterval(h); }, [loadPlots, user]);
+  useEffect(() => { city.current?.setPlots(plots); }, [plots]);
 
   // 游客存档只存在本地浏览器
   useEffect(() => {
@@ -155,6 +163,7 @@ export default function Game() {
       </header>
 
       <nav className="chips">
+        <button className="pill" onClick={() => { setSel("sjxc"); setPeer(null); city.current?.focus("sjxc"); }}>🏘️ 松江买地 · 余{plots.filter((p) => !p.ownerName).length}块</button>
         <button className="pill" onClick={() => setPanel(panel === "chat" ? null : "chat")}>💬 聊天</button>
         <button className="pill" onClick={() => setPanel(panel === "friends" ? null : "friends")}>🤝 朋友</button>
         <button className="pill" onClick={() => setPanel(panel === "log" ? null : "log")}>📜 日脚</button>
@@ -177,6 +186,25 @@ export default function Game() {
           {isHome(sel) && <p className="sub">{HOMES[sel].note}{HOMES[sel].perk.energy ? `；在这里睡觉额外精力+${HOMES[sel].perk.energy}` : ""}</p>}
           <p>{PLACES[sel].desc}</p>
           {here.length > 0 && <p className="sub">这里还有：{here.map((o) => o.name).join("、")}</p>}
+          {sel === "sjxc" && (
+            <div className="plots">
+              <p className="sub">在售 {plots.filter((p) => !p.ownerName).length} / {plots.length} 块。买下就能住，不用交房租；每人限购一块，转卖回收九成。</p>
+              <div className="lotgrid">{plots.map((p) => {
+                const can = !!user && !!s && s.at === "sjxc" && s.ownPlot == null && !p.ownerName;
+                return (
+                  <button key={p.id} className={"lotbtn" + (p.ownerName ? " sold" : "") + (p.mine ? " mine" : "")} disabled={!can || busy || s!.money < p.price}
+                    onClick={async () => { setBusy(true); const d = await api({ op: "buy", id: p.id }); setBusy(false); loadPlots(); if (d) after(d.state, d.label); }}
+                    title={p.ownerName ? `${plotName(p.id)} · ${p.ownerName}家` : `${plotName(p.id)} · ¥${p.price.toLocaleString()}`}>
+                    <b>{plotName(p.id)}</b><span>{p.ownerName ? (p.mine ? "🔑 我家" : p.ownerName) : `¥${(p.price / 10000).toFixed(1)}万`}</span>
+                  </button>);
+              })}</div>
+              {!user && <p className="sub">登录后才能买地。</p>}
+              {user && s && s.at !== "sjxc" && s.ownPlot == null && <p className="sub">先坐过来，才能买地。</p>}
+              {user && s?.ownPlot != null && (sellAsk
+                ? <div className="row2"><span className="sub">卖掉{plotName(s.ownPlot)}，到手九成？</span><button className="btn ghost" onClick={() => setSellAsk(false)}>算了</button><button className="btn primary" disabled={busy} onClick={async () => { setSellAsk(false); setBusy(true); await api({ op: "sell" }); setBusy(false); loadPlots(); }}>确定卖</button></div>
+                : <button className="link" onClick={() => setSellAsk(true)}>卖掉我的地</button>)}
+            </div>
+          )}
           {!s ? <p className="sub">先在下面起个名字，开始游戏。</p> : s.at !== sel ? (
             <button className="go" disabled={busy} onClick={() => go({ op: "travel", to: sel })}>{s.money < trip(s.at, sel).cost && sel === homeOf(s) ? `🚶 没钱坐地铁，走回家 · ${Math.round(trip(s.at, sel).mins * 3 / 60)}小时` : `🚇 坐过去 · ¥${trip(s.at, sel).cost} · ${trip(s.at, sel).mins}分钟`}</button>
           ) : (

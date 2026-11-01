@@ -1,12 +1,14 @@
 // 3D 上海地图：Three.js 低多边形场景 + HTML 图钉/名字层。
 import * as THREE from "three";
 import { PLACES, type PlaceId } from "./game";
+import { PLOT_COUNT, SUBURB, plotName, plotPos, type Plot } from "./plots";
 
 export type Other = { id: string; name: string; at: PlaceId; color: number; act?: string };
 export type City = {
   setSelected(id: PlaceId | null): void;
   setHere(id: PlaceId | null): void;
   setMine(id: PlaceId | null): void;
+  setPlots(list: Plot[]): void;
   setPlayers(list: Other[]): void;
   bubble(id: string, text: string): void;
   focus(id: PlaceId): void;
@@ -98,6 +100,35 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
   // 外围道路：通往虹桥、五角场、徐家汇、浦东各处
   road(-125, 6, -75, 6); road(-100, -12, -75, -12); road(-100, 22, -75, 22); road(-36, -70, -36, -30); road(-56, -70, -56, -30); road(-56, 50, -56, 60); road(-90, -20, -90, 50);
   road(-60, -40, 2, -40); road(60, 4, 110, 4); road(14, 18, 110, 18); road(30, 30, 30, 62); road(14, 46, 60, 46); road(70, -24, 70, 40);
+
+  /* ---- 松江新城：售楼处、湖、24 块地 ---- */
+  road(-125, 6, -152, 6); road(-152, 6, -152, 52); road(-172, 52, -128, 52); road(-172, 85, -128, 85);
+  { const { x, z } = SUBURB;
+    plot(x, z - 2, 8, 5, mats.stone); box(6, 2.6, 3, mats.white, x, 0, z - 2.5); box(6.4, 0.3, 3.4, mats.glass2, x, 2.6, z - 2.5); box(4, 0.8, 0.15, mats.red, x, 1.6, z - 0.9);
+    const lake = new THREE.Mesh(new THREE.CylinderGeometry(6, 6, 0.1, 28), mats.water); lake.position.set(x + 24, 0.12, z + 12); lake.scale.set(0.8, 1, 2); scene.add(lake);
+    for (let i = 0; i < 18; i++) tree(x - 18 + i * 2.1, z + 31, 0.9);
+    for (let i = 0; i < 4; i++) road(x - 18, z + 3 + i * 6 + 6, x + 18, z + 3 + i * 6 + 6, 0.8); }
+  type Lot = { base: THREE.Mesh; sign: THREE.Group; house: THREE.Group | null; tag: HTMLButtonElement; owner: string | null };
+  const lots: Lot[] = [];
+  const lotMat = M(0xb9d49c), lotMine = M(0xf2d27a), fence = M(0xf6f3ea);
+  for (let id = 0; id < PLOT_COUNT; id++) {
+    const { x, z } = plotPos(id);
+    const base = new THREE.Mesh(new THREE.BoxGeometry(5, 0.14, 5), lotMat); base.position.set(x, 0.07, z); base.receiveShadow = true; scene.add(base);
+    [[0, -2.5, 5, 0.12], [0, 2.5, 5, 0.12], [-2.5, 0, 0.12, 5], [2.5, 0, 0.12, 5]].forEach(([dx, dz, w, d]) => box(w, 0.35, d, fence, x + dx, 0, z + dz));
+    const sign = new THREE.Group(); box(0.12, 1.4, 0.12, mats.wood, 0, 0, 0, sign); box(1.2, 0.7, 0.08, mats.red, 0, 1.2, 0, sign); sign.position.set(x + 1.4, 0, z + 1.4); scene.add(sign);
+    const tag = document.createElement("button"); tag.className = "lot"; tag.textContent = plotName(id); overlay.appendChild(tag);
+    tag.onclick = (e) => { e.stopPropagation(); onPick("sjxc"); };
+    lots.push({ base, sign, house: null, tag, owner: null });
+  }
+  const HOUSE_COLORS = [0xe0533d, 0x2f86c9, 0xe8a530, 0x4aa65a, 0x9a5cc4, 0xd4568a, 0x2fa8a0];
+  const buildHouse = (id: number, seed: string) => {
+    let h = 0; for (const c of seed) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+    const g = new THREE.Group(); const wall = M([0xf3f1ea, 0xe9e1d0, 0xd9e2e8][h % 3]), roof = M(HOUSE_COLORS[h % HOUSE_COLORS.length]);
+    box(3, 2.2, 2.6, wall, 0, 0, -0.3, g); const r = cyl(0, 2.4, 1.3, roof, 0, 2.2, -0.3, 4, g); r.rotation.y = Math.PI / 4; r.scale.set(1, 1, 0.9);
+    box(0.7, 1.2, 0.08, M(0x6b4a33), 0, 0, 1.0, g); box(0.6, 0.5, 0.08, mats.glass, -0.9, 1, 1.0, g); box(0.6, 0.5, 0.08, mats.glass, 0.9, 1, 1.0, g);
+    if (h % 2) box(0.4, 0.9, 0.4, mats.brick, 0.8, 2.6, -0.6, g);
+    const { x, z } = plotPos(id); g.position.set(x, 0.14, z); scene.add(g); return g;
+  };
 
   /* ---- 新地标 ---- */
   // 南京路步行街：一排霓虹店招
@@ -236,7 +267,7 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
   };
   // 每个地点前面一块空地，人排成两行站
   const SPOTS: Record<PlaceId, [number, number]> = { home: [-22, 19.6], rmgy: [-28, -7], metro: [-18, -9.6], bund: [4.6, -9], chp: [-9, 21], tzf: [-30, 26.1], wk: [-47, 13], ykl: [-42, 32.2], ljz: [19, 4], ferry: [4.5, 8.2],
-    njl: [-9, -4.2], jas: [-64, -1.5], xtd: [-14, 39], xjh: [-72, 39], hq: [-118, 12.5], wjc: [-28, -51.5], expo: [28, 46], sjgy: [62, 3], zj: [94, 30], gongfang: [-44, -44.5], jiangjing: [44, -19.5], yangfang: [-60, 28.5] };
+    sjxc: [SUBURB.x + 4, SUBURB.z - 3.5], njl: [-9, -4.2], jas: [-64, -1.5], xtd: [-14, 39], xjh: [-72, 39], hq: [-118, 12.5], wjc: [-28, -51.5], expo: [28, 46], sjgy: [62, 3], zj: [94, 30], gongfang: [-44, -44.5], jiangjing: [44, -19.5], yangfang: [-60, 28.5] };
   const slotPos = (at: PlaceId, slot: number) => { const [x, z] = SPOTS[at]; const col = slot % 6, row = Math.floor(slot / 6) % 2; return new THREE.Vector3(x + (col - 2.5) * 1.3 + row * 0.6, 0, z + row * 1.2); };
   const makeFig = (o: Other, slot: number): Fig => {
     const { g, limbs } = person(o.id, o.color); scene.add(g);
@@ -254,7 +285,7 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
   canvas.addEventListener("pointermove", (e) => {
     if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y; const s = (cam.right - cam.left) / root.clientWidth;
     target.copy(drag.t).addScaledVector(new THREE.Vector3(1, 0, -1).normalize(), -dx * s).addScaledVector(new THREE.Vector3(1, 0, 1).normalize(), -dy * s * 1.35);
-    target.x = Math.max(-125, Math.min(105, target.x)); target.z = Math.max(-66, Math.min(60, target.z)); placeCam();
+    target.x = Math.max(-175, Math.min(105, target.x)); target.z = Math.max(-66, Math.min(88, target.z)); placeCam();
   });
   canvas.addEventListener("pointerup", () => (drag = null));
   const setZoom = (z: number) => { zoom = Math.max(0.6, Math.min(3, z)); resize(); };
@@ -295,12 +326,23 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
     renderer.render(scene, cam);
     labels.forEach((el) => project(el, +el.dataset.x!, 0.2, +el.dataset.z!, "-50%,-50%"));
     (Object.keys(pins) as PlaceId[]).forEach((k) => project(pins[k], PLACES[k].x, PLACES[k].h, PLACES[k].z));
+    lots.forEach((L, id) => { const { x, z } = plotPos(id); project(L.tag, x, L.house ? 4.2 : 1.8, z); });
     raf = requestAnimationFrame(frame);
   };
   placeCam(); resize(); raf = requestAnimationFrame(frame);
 
   return {
     setSelected(id) { (Object.keys(pins) as PlaceId[]).forEach((k) => pins[k].classList.toggle("sel", k === id)); },
+    setPlots(list) {
+      list.forEach((p) => {
+        const L = lots[p.id]; if (!L) return;
+        const key = p.ownerName ? `${p.ownerName}#${p.id}` : null;
+        if (key !== L.owner) { if (L.house) { scene.remove(L.house); L.house = null; } if (key) L.house = buildHouse(p.id, key); L.owner = key; }
+        L.sign.visible = !p.ownerName; L.base.material = p.mine ? lotMine : lotMat;
+        L.tag.textContent = p.ownerName ? `${p.mine ? "🔑 " : ""}${p.ownerName}家` : `${plotName(p.id)} ¥${Math.round(p.price / 1000)}k`;
+        L.tag.classList.toggle("sold", !!p.ownerName); L.tag.classList.toggle("mine", !!p.mine);
+      });
+    },
     setMine(id) { (Object.keys(pins) as PlaceId[]).forEach((k) => pins[k].classList.toggle("mine", k === id)); },
     setHere(id) { (Object.keys(pins) as PlaceId[]).forEach((k) => pins[k].classList.toggle("here", k === id)); },
     setPlayers(list) {

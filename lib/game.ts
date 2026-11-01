@@ -1,5 +1,5 @@
 // 纯游戏规则：不依赖界面，前后端都能用。
-export type PlaceId = "home" | "rmgy" | "metro" | "bund" | "chp" | "tzf" | "wk" | "ykl" | "ljz" | "ferry" | "njl" | "jas" | "xtd" | "xjh" | "hq" | "wjc" | "expo" | "sjgy" | "zj" | "gongfang" | "jiangjing" | "yangfang";
+export type PlaceId = "home" | "rmgy" | "metro" | "bund" | "chp" | "tzf" | "wk" | "ykl" | "ljz" | "ferry" | "njl" | "jas" | "xtd" | "xjh" | "hq" | "wjc" | "expo" | "sjgy" | "zj" | "gongfang" | "jiangjing" | "yangfang" | "sjxc";
 export type JobId = "coder" | "barista" | "designer" | "engineer";
 export type Stats = { energy: number; hunger: number; fun: number; social: number };
 export type State = Stats & {
@@ -8,15 +8,17 @@ export type State = Stats & {
   pals?: Record<string, { name: string; n: number }>; // 真人玩家好友：一起做事的次数
   home?: HomeId; // 租住的地方，没有就是亭子间
   rentDay?: number; // 下次交房租的日子
+  ownPlot?: number; // 在松江新城买下的地块编号
 };
 
 // 可以租住的房子：每处都是地图上的一个地点
-export type HomeId = "home" | "gongfang" | "jiangjing" | "yangfang";
+export type HomeId = "home" | "gongfang" | "jiangjing" | "yangfang" | "sjxc";
 export const HOMES: Record<HomeId, { rent: number; perk: Partial<Stats>; note: string }> = {
   home: { rent: 2800, perk: {}, note: "七平方，楼下有王阿姨" },
   gongfang: { rent: 4500, perk: { energy: 5 }, note: "老公房一室户，离五角场近，睡得更香" },
   jiangjing: { rent: 12000, perk: { energy: 10, fun: 10 }, note: "陆家嘴江景，一早醒来看得到东方明珠" },
   yangfang: { rent: 20000, perk: { energy: 12, fun: 15, social: 5 }, note: "带小花园的老洋房，朋友都想来坐坐" },
+  sjxc: { rent: 0, perk: { energy: 15, fun: 12, social: 3 }, note: "自己买的房子，不用交房租，就是离市区远" },
 };
 export const isHome = (p: PlaceId): p is HomeId => p in HOMES;
 export const homeOf = (s: State): HomeId => s.home || "home";
@@ -50,6 +52,7 @@ export const PLACES: Record<PlaceId, { name: string; ic: string; x: number; z: n
   gongfang: { name: "杨浦老公房", ic: "🏢", x: -44, z: -50, h: 6, sub: "杨浦 · 房租¥4500/月", desc: "六层老公房，楼道里贴满开锁小广告，一室户朝南。" },
   jiangjing: { name: "陆家嘴江景公寓", ic: "🌇", x: 44, z: -24, h: 16, sub: "浦东 · 房租¥12000/月", desc: "三十几楼，落地窗正对黄浦江和外滩。" },
   yangfang: { name: "徐汇老洋房", ic: "🏡", x: -60, z: 24, h: 6, sub: "徐汇 · 房租¥20000/月", desc: "梧桐树下的独栋老洋房，木地板，小花园。" },
+  sjxc: { name: "松江新城售楼处", ic: "🏘️", x: -152, z: 58, h: 6, sub: "松江 · 24 块地出售", desc: "地铁9号线终点附近的新城，湖边一排排待建的地块，买下一块就有自己的家。" },
   ferry: { name: "东金线轮渡", ic: "⛴️", x: 6, z: 6, h: 4, sub: "两块钱过江", desc: "坐轮渡过黄浦江，比地铁慢，但风景好。" },
 };
 
@@ -64,10 +67,10 @@ export const NPCS: Record<string, { name: string; line: string }> = {
   mama: { name: "相亲角李妈妈", line: "“侬有房伐？有户口伐？”" },
 };
 
-type Act = [label: string, mins: number, cost: number, eff: Partial<Stats>, kind?: "work" | "interview" | "rent" | null, npc?: string];
+type Act = [label: string, mins: number, cost: number, eff: Partial<Stats>, kind?: "work" | "interview" | "rent" | "movein" | null, npc?: string];
 const HOME_ACTS: Act[] = [["困觉（睡一觉）", 480, 0, { energy: 70, hunger: -25 }], ["刷手机", 60, 0, { fun: 15, energy: -5 }], ["外卖点一份炸猪排", 40, 38, { hunger: 45 }]];
 export const ACTS: Record<PlaceId, Act[]> = {
-  gongfang: HOME_ACTS, jiangjing: HOME_ACTS, yangfang: HOME_ACTS,
+  gongfang: HOME_ACTS, jiangjing: HOME_ACTS, yangfang: HOME_ACTS, sjxc: HOME_ACTS,
   home: [["困觉（睡一觉）", 480, 0, { energy: 70, hunger: -25 }], ["吃王阿姨的菜泡饭", 30, 0, { hunger: 35, social: 5 }, null, "ayi"], ["刷手机", 60, 0, { fun: 15, energy: -5 }], ["外卖点一份炸猪排", 40, 38, { hunger: 45 }]],
   metro: [["在站台等下一班", 20, 0, { fun: -3 }], ["便利店买杯豆浆", 10, 6, { hunger: 10, energy: 3 }]],
   ljz: [["上班", 480, 0, { energy: -35, hunger: -25, fun: -15 }, "work"], ["去楼下买饭团", 15, 9, { hunger: 20 }], ["和同事吐槽老板", 30, 0, { fun: 10, social: 10 }]],
@@ -91,6 +94,9 @@ export const ACTS: Record<PlaceId, Act[]> = {
 
 // 在某处能做的事：住的地方能睡觉；没住的房子只能看房、租下
 export function actsAt(s: State | null, at: PlaceId): Act[] {
+  if (at === "sjxc" && s && homeOf(s) !== "sjxc") {
+    return s.ownPlot != null ? [["搬进自己的房子", 120, 0, { fun: 15 }, "movein"], ["去自家地块转转", 30, 0, { fun: 6 }]] : [["看看样板房", 30, 0, { fun: 5 }], ["湖边散步", 45, 0, { fun: 10, energy: -3 }]];
+  }
   if (!isHome(at) || !s || homeOf(s) === at) return ACTS[at];
   const r = HOMES[at].rent;
   return [[`租下这里（先付一个月¥${r.toLocaleString()}）`, 90, r, { fun: 10 }, "rent"], ["看看房", 30, 0, { fun: 3 }]];
@@ -127,7 +133,7 @@ function advance(s: State, mins: number) {
   s.hunger = clamp(s.hunger - h * 3);
   s.energy = clamp(s.energy - h * 1.5);
   if (s.day !== before) {
-    if (s.day >= (s.rentDay ?? 31)) {
+    if (homeOf(s) !== "sjxc" && s.day >= (s.rentDay ?? 31)) {
       const rent = HOMES[homeOf(s)].rent; s.money -= rent; s.rentDay = s.day + 30;
       log(s, `交房租¥${rent.toLocaleString()}。上海居，大不易。`);
     }
@@ -181,6 +187,12 @@ export function act(prev: State, i: number): Result {
     if (s.worked[s.day]) return { state: prev, toast: "今天已经上过班了" };
     if (s.energy < 25) return { state: prev, toast: "太累了，先回去困一觉" };
     s.worked[s.day] = 1; s.money += job.pay; log(s, `上了一天班，赚了¥${job.pay}。`);
+  }
+  if (kind === "movein") {
+    s.home = "sjxc"; s.rentDay = undefined; advance(s, mins); apply(s, eff);
+    log(s, "搬进了松江新城自己的房子，从此不用交房租。");
+    check(s);
+    return { state: s, toast: "住进自己的房子了 🏡", label: "搬进自己的房子" };
   }
   if (kind === "rent") {
     const h = s.at as HomeId;
@@ -247,6 +259,27 @@ export function coop(prev: State, i: number, partnerId: string, partnerName: str
 export function coopable(at: PlaceId) {
   if (isHome(at)) return []; // 别人家里不一起做事，避免两边能做的事对不上
   return ACTS[at].map((a, i) => ({ i, label: a[0], cost: a[2], kind: a[4] })).filter((x) => !x.kind);
+}
+
+/* ---------- 买地（地块归属由服务器的 plots 表决定，这里只改存档） ---------- */
+export function buyPlot(prev: State, id: number, price: number, name: string): Result {
+  if (prev.at !== "sjxc") return { state: prev, toast: "先到松江新城售楼处" };
+  if (prev.ownPlot != null) return { state: prev, toast: "每人只能买一块地" };
+  if (prev.money < price) return { state: prev, toast: `还差¥${(price - prev.money).toLocaleString()}` };
+  const s = structuredClone(prev);
+  s.money -= price; s.ownPlot = id; s.home = "sjxc"; s.rentDay = undefined; s.fun = clamp(s.fun + 25);
+  log(s, `在松江新城买下${name}，花了¥${price.toLocaleString()}，直接搬了进去。从此不用交房租！`);
+  return { state: s, toast: `买下${name}了！🏡`, label: `买下${name}` };
+}
+
+export function sellPlot(prev: State, price: number, name: string): Result {
+  if (prev.ownPlot == null) return { state: prev, toast: "侬没有地可卖" };
+  const s = structuredClone(prev);
+  const back = Math.round(price * 0.9);
+  s.money += back; s.ownPlot = undefined;
+  if (homeOf(s) === "sjxc") { s.home = "home"; s.rentDay = s.day + 30; }
+  log(s, `卖掉了${name}，到手¥${back.toLocaleString()}（扣了一成手续费），搬回亭子间。`);
+  return { state: s, toast: `卖掉了，到手¥${back.toLocaleString()}` };
 }
 
 export function isState(x: unknown): x is State {
