@@ -86,7 +86,7 @@ export default function Game() {
     if (user === undefined) return;
     if (!user) { // 没登录：有游客存档就接着玩，没有就打开登录注册
       let x: unknown = null; try { x = JSON.parse(localStorage.getItem(LOCAL) || "null"); } catch {}
-      setS(isState(x) ? x : null); if (!isState(x)) setPanel("auth");
+      setS(isState(x) ? x : null);
       return;
     }
     fetch("/api/game").then((r) => r.json() as Promise<any>).then(async (d) => {
@@ -354,7 +354,7 @@ export default function Game() {
       )}
 
       <div className="zoom"><button aria-label="放大" onClick={() => city.current?.zoomBy(1.3)}>＋</button><button aria-label="缩小" onClick={() => city.current?.zoomBy(1 / 1.3)}>－</button></div>
-      {s && <ResetButton onReset={() => { setSel(null); if (user) { api({ op: "reset" }); setPanel("start"); } else { try { localStorage.removeItem(LOCAL); } catch {} setS(null); setPanel("auth"); } }} />}
+      {s && <ResetButton onReset={() => { setSel(null); if (user) { api({ op: "reset" }); setPanel("start"); } else { try { localStorage.removeItem(LOCAL); } catch {} setS(null); } }} />}
       {toast && <div className="toast" role="status">{toast}</div>}
     </>
   );
@@ -362,9 +362,9 @@ export default function Game() {
 
 // 性别 + 出生日期：开局和补填资料共用
 function ProfileFields({ gender, birth, onGender, onBirth }: { gender: Gender | null; birth: string; onGender: (g: Gender) => void; onBirth: (b: string) => void }) {
-  return <div className="pricerow" style={{ margin: "6px 0" }}>
-    <span>性别</span>{(Object.keys(GENDERS) as Gender[]).map((g) => <button key={g} type="button" className="btn ghost" aria-pressed={gender === g} style={gender === g ? { borderColor: "var(--green)", color: "var(--green)", fontWeight: 700 } : undefined} onClick={() => onGender(g)}>{GENDERS[g]}</button>)}
-    <span style={{ marginLeft: 8 }}>出生日期</span><input id="birth" type="date" style={{ width: "auto" }} min="1926-01-01" max={new Date(Date.now() - 16 * 365.25 * 86400000).toISOString().slice(0, 10)} value={birth} onChange={(e) => onBirth(e.target.value)} />
+  return <div style={{ display: "grid", gap: 8, margin: "6px 0" }}>
+    <div className="pricerow"><span style={{ minWidth: 64 }}>性别</span>{(Object.keys(GENDERS) as Gender[]).map((g) => <button key={g} type="button" className="btn ghost" aria-pressed={gender === g} style={gender === g ? { borderColor: "var(--green)", color: "var(--green)", fontWeight: 700 } : undefined} onClick={() => onGender(g)}>{GENDERS[g]}</button>)}</div>
+    <label className="pricerow" style={{ flexWrap: "nowrap" }}><span style={{ minWidth: 64 }}>出生日期</span><input id="birth" type="date" style={{ width: "auto", flex: 1, minWidth: 0 }} min="1926-01-01" max={new Date(Date.now() - 16 * 365.25 * 86400000).toISOString().slice(0, 10)} value={birth} onChange={(e) => onBirth(e.target.value)} /></label>
   </div>;
 }
 function ProfileFix({ onSave }: { onSave: (g: Gender, b: string) => void }) {
