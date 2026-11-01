@@ -1,6 +1,7 @@
 // 松江新城：24 块地，6 列 × 4 行。价格和位置写在代码里，谁买了存在数据库 plots 表。
 export const PLOT_COUNT = 24;
-export const SUBURB = { x: -152, z: 58 }; // 售楼处位置，和 PLACES.sjxc 一致
+import { geo } from "./geo";
+export const SUBURB = geo(121.228, 31.0325); // 售楼处位置，和 PLACES.sjxc 一致（松江新城）
 
 export function plotPrice(id: number) {
   const row = Math.floor(id / 6), col = id % 6;

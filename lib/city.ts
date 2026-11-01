@@ -2,6 +2,7 @@
 import * as THREE from "three";
 import { PLACES, type PlaceId } from "./game";
 import { PLOT_COUNT, SUBURB, plotName, plotPos, type Plot } from "./plots";
+import { geo, HUANGPU, SUZHOU_CREEK } from "./geo";
 
 export type Other = { id: string; name: string; at: PlaceId; color: number; act?: string };
 export type City = {
@@ -32,7 +33,7 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
   let zoom = 1;
   const VIEW = 50;
   const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, -200, 400);
-  const target = new THREE.Vector3(-4, 0, 2);
+  const target = new THREE.Vector3(10, 0, -2);
   const camDir = new THREE.Vector3(1, 1.25, 1).normalize();
   const placeCam = () => { cam.position.copy(target).addScaledVector(camDir, 120); cam.lookAt(target); };
   const resize = () => {
@@ -72,7 +73,7 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
     const g = new THREE.Mesh(new THREE.BoxGeometry(w, 0.12, d), m); g.position.set(x, 0.06, z); g.receiveShadow = true; scene.add(g);
   };
 
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), mats.grass);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(700, 700), mats.grass);
   ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
 
   const ribbon = (pts: number[][], w: number) => {
@@ -86,24 +87,50 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
     s.moveTo(all[0][0], -all[0][1]); all.slice(1).forEach((p) => s.lineTo(p[0], -p[1]));
     const g = new THREE.Mesh(new THREE.ShapeGeometry(s), mats.water); g.rotation.x = -Math.PI / 2; g.position.y = 0.05; g.receiveShadow = true; scene.add(g);
   };
-  ribbon([[4, 70], [6, 40], [8, 20], [9, 6], [8, -6], [10, -16], [18, -24], [30, -30], [50, -36], [90, -44]], 7);
-  ribbon([[-70, -20], [-40, -17], [-20, -19], [-5, -18], [7, -16]], 2.6);
+  const G = (lon: number, lat: number) => { const p = geo(lon, lat); return [p.x, p.z]; };
+  const riverPts = HUANGPU.map(([a, b]) => G(a, b)), creekPts = SUZHOU_CREEK.map(([a, b]) => G(a, b));
+  ribbon(riverPts, 6); ribbon(creekPts, 2.2);
 
   const road = (x1: number, z1: number, x2: number, z2: number, w = 1.6) => {
-    const l = Math.hypot(x2 - x1, z2 - z1); const g = new THREE.Mesh(new THREE.BoxGeometry(l, 0.08, w), mats.road);
+    const l = Math.hypot(x2 - x1, z2 - z1); const g = new THREE.Mesh(new THREE.BoxGeometry(l + w, 0.08, w), mats.road);
     g.position.set((x1 + x2) / 2, 0.04, (z1 + z2) / 2); g.rotation.y = -Math.atan2(z2 - z1, x2 - x1); g.receiveShadow = true; scene.add(g);
   };
-  road(-75, 0, 4, 0); road(-75, -12, 4, -12); road(-75, 22, 4, 22); road(-36, -30, -36, 50); road(-14, -30, -14, 50); road(-56, -30, -56, 50); road(1, -14, 3, 40, 1.4);
-  road(14, 4, 60, 4); road(14, -12, 22, -20, 1.4); road(30, -20, 30, 30); road(14, 18, 60, 18);
-  const bridge = (z: number) => { box(12, 0.4, 1.8, mats.white, 7, 1.6, z); cyl(0.25, 0.25, 6, mats.white, 4, 0, z); cyl(0.25, 0.25, 6, mats.white, 10, 0, z); };
-  bridge(30); bridge(46);
-  // 外围道路：通往虹桥、五角场、徐家汇、浦东各处
-  road(-125, 6, -75, 6); road(-100, -12, -75, -12); road(-100, 22, -75, 22); road(-36, -70, -36, -30); road(-56, -70, -56, -30); road(-56, 50, -56, 60); road(-90, -20, -90, 50);
-  road(-60, -40, 2, -40); road(60, 4, 110, 4); road(14, 18, 110, 18); road(30, 30, 30, 62); road(14, 46, 60, 46); road(70, -24, 70, 40);
+  // 主要道路（按真实走向简化成折线）
+  const ROADS: { w: number; pts: [number, number][] }[] = [
+    { w: 2, pts: [[121.32, 31.197], [121.40, 31.206], [121.445, 31.2215], [121.475, 31.2262], [121.4915, 31.2305]] }, // 延安路高架
+    { w: 1.6, pts: [[121.44, 31.2245], [121.465, 31.231], [121.4765, 31.2345], [121.4905, 31.2398]] }, // 南京西路—南京东路
+    { w: 2, pts: [[121.462, 31.30], [121.462, 31.235], [121.464, 31.18]] }, // 南北高架
+    { w: 1.6, pts: [[121.43, 31.205], [121.455, 31.213], [121.476, 31.2205], [121.494, 31.2255]] }, // 淮海路
+    { w: 1.6, pts: [[121.435, 31.193], [121.455, 31.199], [121.48, 31.207]] }, // 肇嘉浜路
+    { w: 1.6, pts: [[121.4895, 31.20], [121.4915, 31.222], [121.4905, 31.2445], [121.497, 31.252]] }, // 中山东路（外滩）
+    { w: 1.6, pts: [[121.494, 31.2505], [121.505, 31.27], [121.514, 31.299]] }, // 四平路→五角场
+    { w: 1.6, pts: [[121.514, 31.299], [121.53, 31.28], [121.545, 31.27]] }, // 黄兴路
+    { w: 2, pts: [[121.502, 31.2395], [121.525, 31.229], [121.5527, 31.2183], [121.596, 31.204]] }, // 世纪大道→张江
+    { w: 1.6, pts: [[121.503, 31.2445], [121.515, 31.247], [121.53, 31.253]] }, // 浦东大道
+    { w: 1.6, pts: [[121.522, 31.258], [121.522, 31.22], [121.515, 31.18]] }, // 杨高路
+    { w: 1.6, pts: [[121.478, 31.19], [121.505, 31.185], [121.52, 31.18]] }, // 世博大道
+    { w: 2, pts: [[121.435, 31.193], [121.38, 31.15], [121.30, 31.08], [121.228, 31.04]] }, // 沪闵路—G60 去松江
+  ];
+  ROADS.forEach((r) => { const q = r.pts.map(([a, b]) => G(a, b)); for (let i = 1; i < q.length; i++) road(q[i - 1][0], q[i - 1][1], q[i][0], q[i][1], r.w); });
+  const segs = ROADS.flatMap((r) => r.pts.map(([a, b]) => G(a, b)).slice(1).map((q, i, arr) => [i ? arr[i - 1] : G(...r.pts[0]), q]));
+  // 跨江大桥：沿桥位处江的法线方向架桥
+  const bridgeAt = (lon: number, lat: number) => {
+    const [x, z] = G(lon, lat);
+    let best = 0, bd = 1e9; riverPts.forEach(([px, pz], i) => { const d = Math.hypot(px - x, pz - z); if (d < bd) { bd = d; best = i; } });
+    const a = riverPts[Math.max(0, best - 1)], b = riverPts[Math.min(riverPts.length - 1, best + 1)];
+    const ang = Math.atan2(b[1] - a[1], b[0] - a[0]) + Math.PI / 2;
+    const g = new THREE.Group(); box(11, 0.4, 1.8, mats.white, 0, 1.6, 0, g); cyl(0.25, 0.25, 6, mats.white, -2.6, 0, 0, 8, g); cyl(0.25, 0.25, 6, mats.white, 2.6, 0, 0, 8, g);
+    g.position.set(x, 0, z); g.rotation.y = -ang; scene.add(g);
+  };
+  bridgeAt(121.502, 31.205); bridgeAt(121.4855, 31.186); bridgeAt(121.535, 31.256);
+
+  const P = PLACES;
+  const LM = { pearl: geo(121.4998, 31.2397), jinmao: { x: 33, z: -11.5 }, swfc: { x: 37, z: -10.5 }, tower: { x: 40.5, z: -7.5 }, rps: geo(121.4737, 31.2304) };
+  const shiftSince = (m0: number, dx: number, dz: number) => { for (let i = m0; i < scene.children.length; i++) { scene.children[i].position.x += dx; scene.children[i].position.z += dz; } };
 
   /* ---- 松江新城：售楼处、湖、24 块地 ---- */
-  road(-125, 6, -152, 6); road(-152, 6, -152, 52); road(-172, 52, -128, 52); road(-172, 85, -128, 85);
   { const { x, z } = SUBURB;
+    road(x - 22, z - 6, x + 22, z - 6); road(x - 22, z + 27, x + 22, z + 27); road(x - 22, z - 6, x - 22, z + 27); road(x + 22, z - 6, x + 22, z + 27);
     plot(x, z - 2, 8, 5, mats.stone); box(6, 2.6, 3, mats.white, x, 0, z - 2.5); box(6.4, 0.3, 3.4, mats.glass2, x, 2.6, z - 2.5); box(4, 0.8, 0.15, mats.red, x, 1.6, z - 0.9);
     const lake = new THREE.Mesh(new THREE.CylinderGeometry(6, 6, 0.1, 28), mats.water); lake.position.set(x + 24, 0.12, z + 12); lake.scale.set(0.8, 1, 2); scene.add(lake);
     for (let i = 0; i < 18; i++) tree(x - 18 + i * 2.1, z + 31, 0.9);
@@ -131,104 +158,165 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
   };
 
   /* ---- 新地标 ---- */
+  { const m0 = scene.children.length;
   // 南京路步行街：一排霓虹店招
   for (let i = 0; i < 5; i++) { const x = -14 + i * 2.6; box(2.2, 3 + (i % 2), 2.2, i % 2 ? mats.white : mats.stone, x, 0, -7.6); box(2.3, 0.6, 0.15, [mats.red, mats.yellow, mats.pink][i % 3], x, 2.2, -6.45); }
   plot(-9, -4.2, 13, 1.6, mats.stone);
+  shiftSince(m0, P.njl.x - (-9), P.njl.z - (-5)); }
+  { const m0 = scene.children.length;
   // 静安寺：金顶
   { const x = -64, z = -7; plot(x, z, 9, 8, mats.stone); box(5, 2.2, 4, mats.yellow, x, 0, z - 1); box(5.6, 0.4, 4.6, mats.gold, x, 2.2, z - 1); cyl(0, 1.6, 2.2, mats.gold, x, 2.6, z - 1, 4); cyl(0.12, 0.12, 2, mats.gold, x, 4.8, z - 1, 6);
     [[-3, 2], [3, 2]].forEach(([dx, dz]) => { box(1, 3, 1, mats.yellow, x + dx, 0, z + dz); cyl(0, 0.8, 1.2, mats.gold, x + dx, 3, z + dz, 4); });
     box(3, 9, 3, mats.glass, x + 7, 0, z - 3); box(3, 7, 3, mats.white, x - 7, 0, z - 4); }
+  shiftSince(m0, P.jas.x - (-64), P.jas.z - (-7)); }
+  { const m0 = scene.children.length;
   // 新天地：低矮石库门 + 阳伞
   { const x = -14, z = 36; plot(x, z, 12, 8, mats.stone); for (let i = 0; i < 4; i++) { box(2.6, 2.2, 2.4, i % 2 ? mats.brick : mats.grey, x - 4.5 + i * 3, 0, z - 2); box(2.8, 0.4, 2.6, mats.roofTile, x - 4.5 + i * 3, 2.2, z - 2); }
     for (let i = 0; i < 4; i++) { cyl(0.05, 0.05, 1.4, mats.dk, x - 4 + i * 2.6, 0, z + 1.6, 6); cyl(0, 0.9, 0.4, [mats.red, mats.white][i % 2], x - 4 + i * 2.6, 1.3, z + 1.6, 8); } }
+  shiftSince(m0, P.xtd.x - (-14), P.xtd.z - (36)); }
+  { const m0 = scene.children.length;
   // 徐家汇天主教堂：红砖双尖塔
   { const x = -76, z = 34; plot(x, z, 10, 10, mats.park); box(3.4, 4, 7, mats.brick, x, 0, z); cyl(0, 2.2, 1.6, mats.roofTile, x, 4, z, 4).scale.set(1, 1, 2.2);
     [[-1.1], [1.1]].forEach(([dx]) => { box(1.2, 7, 1.2, mats.brick, x + dx, 0, z - 3.6); cyl(0, 0.85, 3.4, mats.dk, x + dx, 7, z - 3.6, 4); });
     box(6, 6, 6, mats.glass2, x + 9, 0, z - 4); }
+  shiftSince(m0, P.xjh.x - (-76), P.xjh.z - (34)); }
+  { const m0 = scene.children.length;
   // 虹桥火车站：长条站房 + 高铁
   { const x = -118, z = 6; plot(x, z, 16, 12, mats.grey); box(14, 3, 7, mats.white, x, 0, z - 1.5); box(14.6, 0.5, 7.6, mats.glass2, x, 3, z - 1.5);
     const hsr = new THREE.Group(); for (let i = 0; i < 5; i++) box(2.6, 0.9, 1, mats.white, i * 2.7, 0, 0, hsr); box(13.5, 0.12, 1.02, mats.glass2, 5.4, 0.45, 0, hsr); hsr.position.set(x - 7, 0.1, z + 4.2); scene.add(hsr); }
+  shiftSince(m0, P.hq.x - (-118), P.hq.z - (6)); }
+  { const m0 = scene.children.length;
   // 五角场：彩蛋 + 大学楼
   { const x = -30, z = -58; plot(x, z, 12, 12, mats.grey); sphere(2.2, mats.yellow, x, 4.2, z).scale.set(1.3, 0.8, 1.3); [[-1.6, -1.6], [1.6, -1.6], [-1.6, 1.6], [1.6, 1.6]].forEach(([dx, dz]) => cyl(0.15, 0.15, 3.6, mats.white, x + dx, 0, z + dz, 6));
     box(4, 6, 3, mats.brick, x - 8, 0, z + 3); box(4, 5, 3, mats.brick, x - 8, 0, z - 2); box(5, 4, 4, mats.white, x + 8, 0, z); for (let i = 0; i < 6; i++) tree(x - 11 + i * 1.6, z + 7, 0.9); }
+  shiftSince(m0, P.wjc.x - (-30), P.wjc.z - (-58)); }
+  { const m0 = scene.children.length;
   // 世博中国馆：红色倒斗拱
   { const x = 28, z = 52; plot(x, z, 12, 12, mats.grey); box(2.4, 4, 2.4, mats.red, x, 0, z); [5, 6, 7, 8, 9].forEach((w, i) => box(w, 1.2, w, mats.red, x, 4 + i * 1.2, z)); box(10, 1.2, 10, mats.red, x, 10, z); }
+  shiftSince(m0, P.expo.x - (28), P.expo.z - (52)); }
+  { const m0 = scene.children.length;
   // 世纪公园：大草坪 + 湖
   { const x = 66, z = -6; plot(x, z, 22, 16, mats.park); const lake = new THREE.Mesh(new THREE.CylinderGeometry(4, 4, 0.1, 24), mats.water); lake.position.set(x + 4, 0.15, z - 2); lake.scale.set(1.4, 1, 1); scene.add(lake);
     for (let i = 0; i < 22; i++) tree(x - 10 + rand() * 20, z - 7 + rand() * 14, 1); }
+  shiftSince(m0, P.sjgy.x - (66), P.sjgy.z - (-6)); }
+  { const m0 = scene.children.length;
   // 张江：科技园 + 张江之尚
   { const x = 96, z = 24; plot(x, z, 16, 14, mats.grey); box(3, 14, 3, mats.glass, x, 0, z - 3); box(4, 6, 6, mats.white, x - 6, 0, z + 2); box(4, 8, 4, mats.glass2, x + 6, 0, z + 1); box(6, 3, 3, mats.white, x, 0, z + 4); for (let i = 0; i < 6; i++) tree(x - 8 + i * 3, z + 7.5, 0.9); }
+  shiftSince(m0, P.zj.x - (96), P.zj.z - (24)); }
+  { const m0 = scene.children.length;
   // 杨浦老公房：六层灰楼
   { const x = -44, z = -50; plot(x, z, 12, 10, mats.stone); [[-3.5, -2], [3.5, -2], [0, 3]].forEach(([dx, dz]) => { box(5.5, 5, 3, mats.grey, x + dx, 0, z + dz); box(5.7, 0.3, 3.2, mats.brick, x + dx, 5, z + dz); }); }
+  shiftSince(m0, P.gongfang.x - (-44), P.gongfang.z - (-50)); }
+  { const m0 = scene.children.length;
   // 陆家嘴江景公寓：两栋高层
   { const x = 44, z = -24; plot(x, z, 10, 8, mats.grey); box(3, 16, 3, mats.glass, x - 2, 0, z); box(3, 13, 3, mats.white, x + 2.5, 0, z - 1); }
+  shiftSince(m0, P.jiangjing.x - (44), P.jiangjing.z - (-24)); }
+  { const m0 = scene.children.length;
   // 徐汇老洋房：坡屋顶 + 花园
   { const x = -60, z = 24; plot(x, z, 10, 9, mats.park); box(4.4, 3, 3.6, mats.white, x, 0, z - 1.5); cyl(0, 3.2, 1.8, mats.red, x, 3, z - 1.5, 4); box(0.6, 1.4, 0.6, mats.brick, x + 1.2, 3.6, z - 1.5);
     for (let i = 0; i < 6; i++) tree(x - 4 + i * 1.6, z + 3.5, 0.8); }
 
 
+  shiftSince(m0, P.yangfang.x - (-60), P.yangfang.z - (24)); }
+  { const m0 = scene.children.length;
   // 东方明珠
   { const x = 15, z = -10; plot(x, z, 6, 6, mats.grey);
     [[-1.2, -1.2], [1.2, -1.2], [0, 1.4]].forEach(([dx, dz]) => { const l = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.35, 9, 8), mats.white); l.position.set(x + dx * 0.6, 4.3, z + dz * 0.6); l.castShadow = true; scene.add(l); });
     sphere(2, mats.pink, x, 6, z); cyl(0.4, 0.4, 10, mats.white, x, 6, z); sphere(1.3, mats.pink, x, 16, z); cyl(0.25, 0.3, 3, mats.white, x, 16, z); sphere(0.6, mats.pink, x, 19.6, z); cyl(0.06, 0.12, 4, mats.grey, x, 20, z, 6); }
+  shiftSince(m0, LM.pearl.x - (15), LM.pearl.z - (-10)); }
+  { const m0 = scene.children.length;
   // 上海中心
   { const x = 24, z = -2; plot(x, z, 7, 7, mats.grey); for (let i = 0; i < 14; i++) { const s = 2.4 - i * 0.11; box(s, 2.2, s, i % 2 ? mats.glass : mats.glass2, x, i * 2.2, z).rotation.y = i * 0.12; } }
+  shiftSince(m0, LM.tower.x - (24), LM.tower.z - (-2)); }
+  { const m0 = scene.children.length;
   // 金茂
   { const x = 30, z = -6; plot(x, z, 6, 6, mats.grey); [2.6, 2.3, 2, 1.7, 1.4, 1.1, 0.8].forEach((s, i) => box(s, 3.2, s, mats.bronze, x, i * 3.2, z)); cyl(0, 0.4, 3, mats.gold, x, 22.4, z, 4); }
+  shiftSince(m0, LM.jinmao.x - (30), LM.jinmao.z - (-6)); }
+  { const m0 = scene.children.length;
   // 环球金融中心
   { const x = 30, z = 4; plot(x, z, 6, 6, mats.grey); box(2.6, 22, 2.2, mats.glass, x, 0, z); box(1.2, 1.6, 2.4, mats.glass2, x, 19.5, z); }
+  shiftSince(m0, LM.swfc.x - (30), LM.swfc.z - (4)); }
+  { const m0 = scene.children.length;
+  // 陆家嘴其他楼
   [[20, 8, 8], [36, -14, 10], [38, 2, 12], [22, -16, 7], [42, 12, 8], [36, 14, 6]].forEach(([x, z, h]) => { plot(x, z, 4, 4, mats.grey); box(2.6, h, 2.6, rand() < 0.5 ? mats.glass : mats.white, x, 0, z); });
-  // 外滩
-  for (let i = 0; i < 8; i++) { const z = -22 + i * 3.6, x = 2, h = 3 + ((i * 7) % 4); box(2.4, h, 3, i % 3 ? mats.stone : mats.white, x, 0, z);
-    if (i === 3) { cyl(0.5, 0.5, 2, mats.stone, x, h, z); cyl(0, 0.6, 1, mats.green, x, h + 2, z, 8); } if (i === 5) cyl(0, 0.8, 1.6, mats.green, x, h, z, 4); }
-  plot(4.5, -10, 1.4, 30, mats.stone);
+  shiftSince(m0, P.ljz.x - (22), P.ljz.z - (-6)); }
+  // 外滩：沿黄浦江西岸一排万国建筑
+  for (let i = 0; i < 9; i++) { const lat = 31.2318 + i * 0.0015; const [x, z] = G(121.4897, lat); const h = 3 + ((i * 7) % 4);
+    box(2.4, h, 3, i % 3 ? mats.stone : mats.white, x, 0, z);
+    if (i === 4) { cyl(0.5, 0.5, 2, mats.stone, x, h, z); cyl(0, 0.6, 1, mats.green, x, h + 2, z, 8); } if (i === 6) cyl(0, 0.8, 1.6, mats.green, x, h, z, 4); }
+  { const [x1, z1] = G(121.4922, 31.2312), [x2, z2] = G(121.4918, 31.2448); road(x1, z1, x2, z2, 1.2); }
+  { const m0 = scene.children.length;
   // 人民广场
   plot(-24, -10, 16, 12, mats.park); cyl(2, 2.4, 2, mats.stone, -22, 0, -12, 16); sphere(1.6, mats.stone, -22, 2, -12); box(4, 1.2, 3, mats.white, -28, 0, -12); box(5, 0.3, 4, mats.white, -28, 1.2, -12);
   for (let i = 0; i < 14; i++) tree(-32 + rand() * 16, -15 + rand() * 10, 0.8);
+  shiftSince(m0, LM.rps.x - (-24), LM.rps.z - (-10)); }
+  { const m0 = scene.children.length;
+  // 地铁站口
   box(2.2, 0.9, 1.2, mats.red, -18, 0, -12); box(0.2, 1.6, 0.2, mats.dk, -16.6, 0, -12);
+  shiftSince(m0, P.metro.x - (-18), P.metro.z - (-12)); }
+  { const m0 = scene.children.length;
   // 石库门
   plot(-22, 14, 14, 10, mats.stone);
   for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) { const x = -27 + c * 3.4, z = 10.5 + r * 3.4; box(2.8, 2.4, 2.6, mats.grey, x, 0, z); box(3, 0.5, 2.8, mats.roofTile, x, 2.4, z); box(0.9, 1.4, 0.15, mats.dk, x, 0, z + 1.3); }
+  shiftSince(m0, P.home.x - (-22), P.home.z - (14)); }
+  { const m0 = scene.children.length;
   // 城隍庙
   { const x = -8, z = 16; plot(x, z, 10, 9, mats.stone); box(4, 2, 3, mats.red, x, 0, z - 1); box(5, 0.4, 4, mats.roofTile, x, 2, z - 1); box(3.6, 0.6, 2.8, mats.roofTile, x, 2.4, z - 1);
     const pond = new THREE.Mesh(new THREE.BoxGeometry(5, 0.1, 3), mats.water); pond.position.set(x, 0.13, z + 2.5); scene.add(pond);
     [[-2, 0], [-1, 1], [0, 0], [1, 1], [2, 0]].forEach(([dx, dz]) => box(1.1, 0.25, 0.4, mats.wood, x + dx, 0.15, z + 2.2 + dz * 0.4)); tree(x - 4, z + 3, 0.8); tree(x + 4, z - 3, 0.8); }
+  shiftSince(m0, P.chp.x - (-8), P.chp.z - (16)); }
+  { const m0 = scene.children.length;
   // 田子坊
   plot(-30, 26, 10, 8, mats.stone);
   [[-33, 24], [-30, 24], [-27, 24], [-33, 28], [-30, 28], [-27, 28]].forEach(([x, z], i) => { box(2.4, 2 + (i % 2), 2.4, [mats.grey, mats.brick, mats.white][i % 3], x, 0, z); box(2.6, 0.3, 2.6, mats.roofTile, x, 2 + (i % 2), z); });
   for (let i = 0; i < 5; i++) box(0.9, 0.05, 0.6, [mats.red, mats.yellow, mats.pink][i % 3], -34 + i * 2, 2.8, 26);
+  shiftSince(m0, P.tzf.x - (-30), P.tzf.z - (26)); }
+  { const m0 = scene.children.length;
   // 武康路
   plot(-50, 12, 14, 14, mats.park); box(3, 5, 8, mats.brick, -55, 0, 8).rotation.y = 0.5; box(3, 0.4, 8.2, mats.white, -55, 5, 8).rotation.y = 0.5;
   [[-48, 16], [-52, 18], [-45, 10]].forEach(([x, z]) => { box(2.6, 2.4, 2.4, mats.white, x, 0, z); cyl(0, 1.9, 1.4, mats.red, x, 2.4, z, 4); });
   for (let i = 0; i < 12; i++) tree(-57 + i * 1.4, 4 + (i % 2) * 2, 1.1);
   for (let i = 0; i < 8; i++) tree(-56 + rand() * 12, 18 + rand() * 4, 1);
+  shiftSince(m0, P.wk.x - (-50), P.wk.z - (12)); }
+  { const m0 = scene.children.length;
   // 永康路
   plot(-42, 30, 10, 6, mats.stone);
   for (let i = 0; i < 4; i++) { box(2.2, 2.2, 2, mats.grey, -46 + i * 2.6, 0, 29); box(2, 0.15, 1, [mats.yellow, mats.red][i % 2], -46 + i * 2.6, 1.4, 30.4); }
   for (let i = 0; i < 5; i++) tree(-47 + i * 2.4, 32.5, 0.7);
+  shiftSince(m0, P.ykl.x - (-42), P.ykl.z - (30)); }
   // 轮渡
-  box(3, 0.4, 2, mats.wood, 5, 0, 6); box(1.5, 1.2, 1.2, mats.white, 5, 0.4, 6);
-  const ferry = new THREE.Group(); box(3, 0.6, 1.4, mats.white, 0, 0, 0, ferry); box(1.6, 0.8, 1.1, mats.yellow, 0, 0.6, 0, ferry); ferry.position.set(8, 0.1, 6); scene.add(ferry);
-  const train = new THREE.Group(); for (let i = 0; i < 4; i++) box(2.6, 0.9, 1, mats.white, i * 2.8, 0, 0, train); box(11, 0.08, 1.02, mats.red, 4.2, 0.55, 0, train); train.position.set(-70, 0.1, -12.6); scene.add(train);
+  const FERRY = { x: P.ferry.x, z: P.ferry.z };
+  box(3, 0.4, 2, mats.wood, FERRY.x - 2.5, 0, FERRY.z); box(1.5, 1.2, 1.2, mats.white, FERRY.x - 2.5, 0.4, FERRY.z);
+  const ferry = new THREE.Group(); box(3, 0.6, 1.4, mats.white, 0, 0, 0, ferry); box(1.6, 0.8, 1.1, mats.yellow, 0, 0.6, 0, ferry); ferry.position.set(FERRY.x, 0.1, FERRY.z); ferry.rotation.y = Math.PI / 2; scene.add(ferry);
+  // 高铁从虹桥往外开：沿延安路高架的第一段跑
+  const [tA, tB] = [G(121.32, 31.197), G(121.40, 31.206)];
+  const train = new THREE.Group(); for (let i = 0; i < 4; i++) box(2.6, 0.9, 1, mats.white, i * 2.8, 0, 0, train); box(11, 0.08, 1.02, mats.red, 4.2, 0.55, 0, train); train.rotation.y = -Math.atan2(tB[1] - tA[1], tB[0] - tA[0]); scene.add(train);
 
+  const segDist = (x: number, z: number, a: number[], b: number[]) => { const vx = b[0] - a[0], vz = b[1] - a[1], l2 = vx * vx + vz * vz || 1; const t = Math.max(0, Math.min(1, ((x - a[0]) * vx + (z - a[1]) * vz) / l2)); return Math.hypot(x - a[0] - t * vx, z - a[1] - t * vz); };
+  const near = (pts: number[][], x: number, z: number, r: number) => pts.some((p, i) => i > 0 && segDist(x, z, pts[i - 1], p) < r);
   const free = (x: number, z: number) => {
     for (const k in PLACES) { const p = PLACES[k as PlaceId]; if (Math.hypot(p.x - x, p.z - z) < 9) return false; }
-    if (x > 12 && z < -22 && z > -0.2 * x - 32 && z < -0.2 * x - 22) return false; // 黄浦江向东拐的那段
-    if (Math.abs(z - 6) < 1.5 && x < -75) return false;
-    if (x > -1 && x < 15 && z > -30) return false;
-    if (Math.abs(z) < 1.5 || Math.abs(z + 12) < 1.5 || Math.abs(z - 22) < 1.5) return false;
-    if (Math.abs(z + 18) < 2.5 && x < 8) return false;
+    if (Math.hypot(x - SUBURB.x, z - SUBURB.z - 10) < 32) return false;
+    if (near(riverPts, x, z, 5.5) || near(creekPts, x, z, 2.6)) return false;
+    if (segs.some(([a, b]) => segDist(x, z, a, b) < 2.2)) return false;
     return true;
   };
-  for (let i = 0; i < 220; i++) { const x = rnd(-128, -2), z = rnd(-70, 62); if (free(x, z)) box(rnd(1.8, 3), rnd(1.5, 6), rnd(1.8, 3), rand() < 0.3 ? mats.white : mats.grey, x, 0, z); }
-  for (let i = 0; i < 110; i++) { const x = rnd(16, 110), z = rnd(-30, 62); if (free(x, z) && Math.hypot(x - 26, z + 2) >= 12) box(rnd(2, 3), rnd(3, 12), rnd(2, 3), rand() < 0.5 ? mats.glass : mats.white, x, 0, z); }
-  for (let i = 0; i < 200; i++) { const x = rnd(-128, 110), z = rnd(-70, 62); if (free(x, z) && !(x > -1 && x < 16)) tree(x, z, rnd(0.6, 1)); }
+  // 填充街区：越靠近市中心楼越密越高；黄浦江以东是浦东玻璃楼
+  const riverXAt = (z: number) => { let best = riverPts[0]; for (const p of riverPts) if (Math.abs(p[1] - z) < Math.abs(best[1] - z)) best = p; return best[0]; };
+  for (let i = 0; i < 520; i++) {
+    const r = 6 + Math.pow(rand(), 0.8) * 105, a = rand() * Math.PI * 2, x = Math.cos(a) * r, z = Math.sin(a) * r * 0.9;
+    if (!free(x, z)) continue;
+    const east = x > riverXAt(z) && z > -40, h = rnd(1.5, 5) + Math.max(0, 40 - r) / (east ? 3 : 7);
+    box(rnd(1.8, 3), h, rnd(1.8, 3), east ? (rand() < 0.5 ? mats.glass : mats.white) : rand() < 0.3 ? mats.white : mats.grey, x, 0, z);
+  }
+  for (let i = 0; i < 260; i++) { const x = rnd(-140, 110), z = rnd(-95, 140); if (free(x, z)) tree(x, z, rnd(0.6, 1)); }
   const cars: THREE.Mesh[] = [];
-  for (let i = 0; i < 10; i++) { const c = box(1.2, 0.6, 0.7, [mats.red, mats.yellow, mats.white, mats.glass2][i % 4], 0, 0.08, 0); c.userData = { lane: [0, 22, -12][i % 3], sp: rnd(0.08, 0.18) * (i % 2 ? 1 : -1), x: rnd(-70, 0) }; cars.push(c); }
+  const longSegs = segs.filter(([a, b]) => Math.hypot(b[0] - a[0], b[1] - a[1]) > 15);
+  for (let i = 0; i < 18; i++) { const c = box(1.2, 0.6, 0.7, [mats.red, mats.yellow, mats.white, mats.glass2][i % 4], 0, 0.08, 0); const sg = longSegs[i % longSegs.length]; c.userData = { a: sg[0], b: sg[1], t: rand(), sp: rnd(0.0015, 0.004) * (i % 2 ? 1 : -1) }; c.rotation.y = -Math.atan2(sg[1][1] - sg[0][1], sg[1][0] - sg[0][0]); cars.push(c); }
 
   /* ---- 覆盖层 ---- */
   const labels: HTMLElement[] = [];
-  ([["黄浦江", 8, 22, ""], ["浦 西", -40, -26, "land"], ["浦 东", 46, 26, "land"], ["苏州河", -50, -18, ""], ["静 安", -78, -14, "land"], ["徐 汇", -90, 44, "land"], ["杨 浦", -12, -62, "land"], ["闵 行", -116, 20, "land"], ["张 江", 100, 40, "land"]] as const).forEach(([t, x, z, c]) => {
+  ([["黄浦江", 121.4985, 31.214, ""], ["苏州河", 121.43, 31.2405, ""], ["浦 西", 121.455, 31.253, "land"], ["浦 东", 121.535, 31.21, "land"], ["静 安", 121.44, 31.232, "land"], ["徐 汇", 121.43, 31.178, "land"], ["杨 浦", 121.53, 31.295, "land"], ["闵 行", 121.37, 31.14, "land"], ["张 江", 121.6, 31.19, "land"], ["松 江", 121.2, 31.06, "land"]] as const).map(([t, lon, lat, c]) => [t, G(lon, lat)[0], G(lon, lat)[1], c] as const).forEach(([t, x, z, c]) => {
     const d = document.createElement("div"); d.className = "lbl " + c; d.textContent = t; d.dataset.x = String(x); d.dataset.z = String(z); overlay.appendChild(d); labels.push(d);
   });
   const pins = {} as Record<PlaceId, HTMLButtonElement>;
@@ -266,8 +354,10 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
     return { g, limbs: [legL, legR, armL, armR] };
   };
   // 每个地点前面一块空地，人排成两行站
-  const SPOTS: Record<PlaceId, [number, number]> = { home: [-22, 19.6], rmgy: [-28, -7], metro: [-18, -9.6], bund: [4.6, -9], chp: [-9, 21], tzf: [-30, 26.1], wk: [-47, 13], ykl: [-42, 32.2], ljz: [19, 4], ferry: [4.5, 8.2],
-    sjxc: [SUBURB.x + 4, SUBURB.z - 3.5], njl: [-9, -4.2], jas: [-64, -1.5], xtd: [-14, 39], xjh: [-72, 39], hq: [-118, 12.5], wjc: [-28, -51.5], expo: [28, 46], sjgy: [62, 3], zj: [94, 30], gongfang: [-44, -44.5], jiangjing: [44, -19.5], yangfang: [-60, 28.5] };
+  // 每个地点前面一块空地（相对地点的偏移），人排成两行站
+  const SPOT_OFF: Partial<Record<PlaceId, [number, number]>> = { home: [0, 5.6], rmgy: [2, -1], metro: [0, 2.4], bund: [-2, 3], chp: [-1, 5], tzf: [0, 0.1], wk: [3, 1], ykl: [0, 2.2], ljz: [3, 9], ferry: [-4.5, 2.2],
+    sjxc: [4, -3.5], njl: [0, 1], jas: [0, 5.5], xtd: [0, 3], xjh: [4, 5], hq: [0, 6.5], wjc: [2, 6.5], expo: [4, 5], sjgy: [-4, 9], zj: [-2, 6], gongfang: [0, 5.5], jiangjing: [0, 4.5], yangfang: [0, 4.5] };
+  const SPOTS = Object.fromEntries((Object.keys(PLACES) as PlaceId[]).map((k) => [k, [PLACES[k].x + (SPOT_OFF[k]?.[0] ?? 0), PLACES[k].z + (SPOT_OFF[k]?.[1] ?? 3)]])) as Record<PlaceId, [number, number]>;
   const slotPos = (at: PlaceId, slot: number) => { const [x, z] = SPOTS[at]; const col = slot % 6, row = Math.floor(slot / 6) % 2; return new THREE.Vector3(x + (col - 2.5) * 1.3 + row * 0.6, 0, z + row * 1.2); };
   const makeFig = (o: Other, slot: number): Fig => {
     const { g, limbs } = person(o.id, o.color); scene.add(g);
@@ -285,7 +375,7 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
   canvas.addEventListener("pointermove", (e) => {
     if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y; const s = (cam.right - cam.left) / root.clientWidth;
     target.copy(drag.t).addScaledVector(new THREE.Vector3(1, 0, -1).normalize(), -dx * s).addScaledVector(new THREE.Vector3(1, 0, 1).normalize(), -dy * s * 1.35);
-    target.x = Math.max(-175, Math.min(105, target.x)); target.z = Math.max(-66, Math.min(88, target.z)); placeCam();
+    target.x = Math.max(-150, Math.min(110, target.x)); target.z = Math.max(-95, Math.min(145, target.z)); placeCam();
   });
   canvas.addEventListener("pointerup", () => (drag = null));
   const setZoom = (z: number) => { zoom = Math.max(0.6, Math.min(3, z)); resize(); };
@@ -307,9 +397,9 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
   const frame = (t: number) => {
     const dt = Math.min(50, t - t0) / 16; t0 = t;
     if (!reduce) {
-      ferry.position.x = 8 + Math.sin(t / 2600) * 2.6;
-      train.position.x += 0.35 * dt; if (train.position.x > 2) train.position.x = -80;
-      cars.forEach((c) => { const u = c.userData; u.x += u.sp * dt; if (u.x > 2) u.x = -72; if (u.x < -72) u.x = 2; c.position.set(u.x, 0.38, u.lane + (u.sp > 0 ? 0.4 : -0.4)); });
+      ferry.position.x = FERRY.x + Math.sin(t / 2600) * 2.4;
+      const tt = (t / 9000) % 1; train.position.set(tA[0] + (tB[0] - tA[0]) * tt, 0.1, tA[1] + (tB[1] - tA[1]) * tt);
+      cars.forEach((c) => { const u = c.userData; u.t = (u.t + u.sp * dt + 1) % 1; c.position.set(u.a[0] + (u.b[0] - u.a[0]) * u.t, 0.38, u.a[1] + (u.b[1] - u.a[1]) * u.t); });
     }
     const now = Date.now();
     figs.forEach((f) => {
