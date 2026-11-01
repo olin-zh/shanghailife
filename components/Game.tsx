@@ -199,6 +199,11 @@ export default function Game() {
   };
 
   const here = sel ? Object.values(others).filter((o) => o.at === sel) : [];
+  // 底部状态卡：默认收起，点一下展开；展开后 12 秒没动或点了地图就自动收起
+  const [open, setOpen] = useState(false);
+  useEffect(() => { if (!open) return; const h = setTimeout(() => setOpen(false), 12000); return () => clearTimeout(h); }, [open, s]);
+  useEffect(() => { setOpen(false); }, [sel, cell, peer]);
+  useEffect(() => { if (s && (!s.gender || !s.birth)) setOpen(true); }, [s?.gender, s?.birth, !!s]);
   const status = s ? [["精力", s.energy], ["肚皮", s.hunger], ["开心", s.fun], ["社交", s.social]] as const : [];
 
   return (
@@ -227,16 +232,18 @@ export default function Game() {
         <button className="pill" onClick={() => setPanel(panel === "help" ? null : "help")}>❓ 怎么玩</button>
       </nav>
 
-      <section className="bottom">{s ? (
+      <section className={"bottom" + (s && open ? "" : s ? " folded" : "")} onClick={() => { if (s && !open) setOpen(true); }}>{s ? (
         <>
-          <div className="who"><b>{s.name}{s.gender ? ` ${s.gender === "m" ? "♂" : s.gender === "f" ? "♀" : ""}` : ""}{s.birth ? ` ${ageOf(s.birth)}岁` : ""} · {jobTitle(s)}</b><span className="money" style={{ color: s.money < 0 ? "var(--red)" : undefined }}>¥{s.money.toLocaleString()}</span></div>
-          <div className="career">
+          <div className="who" onClick={(e) => { e.stopPropagation(); setOpen(!open); }} role="button" aria-expanded={open} title={open ? "收起" : "展开"}><b>{s.name}{s.gender ? ` ${s.gender === "m" ? "♂" : s.gender === "f" ? "♀" : ""}` : ""}{s.birth ? ` ${ageOf(s.birth)}岁` : ""} · {jobTitle(s)}</b><span className="money" style={{ color: s.money < 0 ? "var(--red)" : undefined }}>¥{s.money.toLocaleString()} <span className="fold">{open ? "▾" : "▴"}</span></span></div>
+          {!open && <div className="mini">{status.map(([l, v], i) => <span key={l} className={v < 25 ? "low" : ""} title={l}>{["⚡", "🍜", "😊", "💬"][i]} {Math.round(v)}</span>)}</div>}
+          {open && <><div className="career">
             <span>Lv{lvOf(s)}</span>
             <div className="bar"><i style={{ width: (nextLvXp(s) == null ? 100 : Math.min(100, (((s.xp || 0) - LV_XP[lvOf(s) - 1]) / (nextLvXp(s)! - LV_XP[lvOf(s) - 1])) * 100)) + "%" }} /></div>
             <span className="sub">{nextLvXp(s) == null ? "已到顶级" : `经验 ${s.xp || 0}/${nextLvXp(s)}`} · 每周开销¥{weeklyCost(s)}</span>
           </div>
           <div className="stats">{status.map(([l, v]) => <div className="st" key={l}>{l} {Math.round(v)}<div className="bar"><i className={v < 25 ? "low" : ""} style={{ width: v + "%" }} /></div></div>)}</div>
           {(!s.gender || !s.birth) ? <ProfileFix onSave={(g, b) => { if (user) api({ op: "profile", gender: g, birth: b }); else setS({ ...s, gender: g, birth: b }); }} /> : <div className="last">{s.log[0]?.[1]}</div>}
+          </>}
         </>
       ) : <Start onStart={(n, j, g, b) => { if (user) api({ op: "new", name: n, job: j, gender: g, birth: b }); else setS(newGame(n, j, g, b)); setSel("hostel"); }} />}</section>
 

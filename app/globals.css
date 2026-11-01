@@ -135,3 +135,8 @@ a.xbtn{display:block;text-align:center;text-decoration:none;opacity:1}
 .pricerow input{width:72px}
 .shoptag{position:absolute;left:0;top:0;font-size:11px;font-weight:500;padding:1px 7px;border-radius:6px;background:#fff8e6;border:1px solid #e8c77a;white-space:nowrap}
 .lang{border:1px solid var(--line,#ddd);border-radius:999px;background:#fff;font-size:12px;padding:2px 6px;color:inherit}
+.bottom.folded{padding:8px 14px;gap:4px;cursor:pointer}
+.bottom .who{cursor:pointer;user-select:none}
+.bottom .fold{font-size:12px;color:var(--muted);margin-left:2px}
+.bottom .mini{display:flex;gap:12px;font-size:12px;color:var(--muted)}
+.bottom .mini .low{color:var(--red);font-weight:700}
