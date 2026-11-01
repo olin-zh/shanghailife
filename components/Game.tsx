@@ -4,7 +4,7 @@ import { createCity, type City, type Other } from "../lib/city";
 import { plotName, type Plot } from "../lib/plots";
 import { AD_DAYS, AD_PRICE, BOAT_COUNT, boatName, type Boat } from "../lib/boats";
 import { DEPOSIT, KINDS, SLOTS, npcPerHour, slotAt, type Shop, type ShopKind } from "../lib/shops";
-import { actsAt, homeOf, isHome, HOMES, GIGS, gigHint, jobTitle, lvOf, nextLvXp, LV_XP, weeklyCost, GIFT_AMOUNTS, JOBS, NPCS, PLACES, act, clock, coopable, isState, mood, newGame, travel, trip, type JobId, type PlaceId, type State } from "../lib/game";
+import { actsAt, homeOf, isHome, HOMES, GIGS, gigHint, jobTitle, lvOf, nextLvXp, LV_XP, weeklyCost, GIFT_AMOUNTS, JOBS, NPCS, PLACES, act, clock, coopable, isState, mood, newGame, travel, trip, SKILLS, SKILL_MAX, SKILL_BONUS, LICENSE_LV, skillLv, type SkillId, type JobId, type PlaceId, type State } from "../lib/game";
 
 type User = { id: string; email: string; name: string };
 type Chat = { id: string; name: string; at: PlaceId; text: string; ts: number };
@@ -18,7 +18,7 @@ export default function Game() {
   const [user, setUser] = useState<User | null | undefined>(undefined);
   const [s, setS] = useState<State | null>(null);
   const [sel, setSel] = useState<PlaceId | null>(null);
-  const [panel, setPanel] = useState<"friends" | "log" | "help" | "chat" | "auth" | null>(null);
+  const [panel, setPanel] = useState<"friends" | "log" | "help" | "chat" | "auth" | "skills" | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [others, setOthers] = useState<Record<string, Other>>({});
   const [chats, setChats] = useState<Chat[]>([]);
@@ -190,6 +190,7 @@ export default function Game() {
 
       <nav className="chips">
         <button className="pill" onClick={() => { setSel("sjxc"); setPeer(null); city.current?.focus("sjxc"); }}>🏘️ 松江买地 · 余{plots.filter((p) => !p.ownerName).length}块</button>
+        <button className="pill" onClick={() => setPanel(panel === "skills" ? null : "skills")}>🎯 能力</button>
         <button className="pill" onClick={() => setPanel(panel === "chat" ? null : "chat")}>💬 聊天</button>
         <button className="pill" onClick={() => setPanel(panel === "friends" ? null : "friends")}>🤝 朋友</button>
         <button className="pill" onClick={() => setPanel(panel === "log" ? null : "log")}>📜 日脚</button>
@@ -253,6 +254,14 @@ export default function Game() {
         <aside className="panel">
           <button className="x" aria-label="关闭" onClick={() => setPanel(null)}>✕</button>
           {panel === "auth" && <Auth xOn={xOn} onDone={(u) => { setUser(u); setPanel(null); say(`欢迎，${u.name}`); }} />}
+          {panel === "skills" && s && <><h2>能力</h2><p className="muted">每种能力最高 {SKILL_MAX} 级，每级加成 {(SKILL_BONUS * 100).toFixed(1)}%。</p>
+            {(Object.keys(SKILLS) as SkillId[]).map((k) => { const v = skillLv(s.sk?.[k] || 0), sk = SKILLS[k]; return (
+              <div key={k} style={{ margin: "10px 0" }}>
+                <b>{sk.ic} {sk.name} · {v.lv} 级</b>{k === "drive" && <span className="muted">{v.lv >= LICENSE_LV ? " · 已有驾照" : " · 未考驾照"}</span>}
+                <span className="muted" style={{ float: "right" }}>+{(v.lv * SKILL_BONUS * 100).toFixed(1)}%</span>
+                <div style={{ height: 6, background: "#0001", borderRadius: 3, margin: "4px 0" }}><div style={{ height: 6, borderRadius: 3, background: "#e0533d", width: `${v.need ? (v.into / v.need) * 100 : 100}%` }} /></div>
+                <div className="muted" style={{ fontSize: 12 }}>{v.need ? `再 ${v.need - v.into} 点升级 · ` : "已满级 · "}怎么练：{sk.how}。作用：{sk.use}。</div>
+              </div>); })}</>}
           {panel === "help" && <><h2>怎么玩</h2><p>拖动地图看看上海，滚轮或右下角按钮缩放。点建筑上的图标查看能做啥，不在那里就先坐地铁过去，过江更贵。</p><p>上班赚钞票，吃饭困觉保持状态，多和人来往交朋友。每30天交一次房租，亭子间¥2,800；有钱了可以去看房搬家，好房子睡得更香，但房租也更贵。去张江面试能换高薪工作。</p><p>登录后存档会存在云端，还能在地图上看到其他玩家、聊天、点名字牌向对方挥手。</p></>}
           {panel === "log" && <><h2>日脚</h2>{s ? s.log.map(([t, x], i) => <p key={i}><span className="t">{t}</span>{x}</p>) : <p>先开始游戏吧。</p>}</>}
           {panel === "friends" && <><h2>朋友</h2>{s && Object.keys(s.friends).length ? Object.entries(s.friends).map(([k, v]) => <p key={k}>{NPCS[k].name} <span className="t">· {v >= 60 ? "好朋友" : v >= 30 ? "熟人" : "认得"} {v}</span></p>) : <p>还没认得人。去城隍庙、武康路或永康路转转。</p>}

@@ -13,6 +13,7 @@ export type State = Stats & {
   ownPlot?: number; // 在松江新城买下的地块编号
   lv?: number; xp?: number; // 当前职业的等级（1–5）和经验
   costDay?: number; // 下次结算一周生活开销的日子
+  sk?: Partial<Record<SkillId, number>>; // 各项能力的累计经验
 };
 
 // 可以租住的房子：每处都是地图上的一个地点
@@ -24,6 +25,41 @@ export const HOMES: Record<HomeId, { rent: number; perk: Partial<Stats>; note: s
   yangfang: { rent: 20000, perk: { energy: 12, fun: 15, social: 5 }, note: "带小花园的老洋房，朋友都想来坐坐" },
   sjxc: { rent: 0, perk: { energy: 15, fun: 12, social: 3 }, note: "自己买的房子，不用交房租，就是离市区远" },
 };
+/* ---------- 能力：6 种，每种 0–20 级，每级加成 SKILL_BONUS ---------- */
+export type SkillId = "pro" | "talk" | "cook" | "fit" | "drive" | "sh";
+export const SKILLS: Record<SkillId, { name: string; ic: string; how: string; use: string }> = {
+  pro: { name: "专业技能", ic: "💻", how: "上班、加班、在书院看书、在家刷网课", use: "工资更高，张江面试更容易过" },
+  talk: { name: "口才", ic: "🗣️", how: "和人聊天、相亲角、摆摊、家教、拍照、调酒、和玩家一起做事", use: "摆摊、拍照、家教、调酒收入更高" },
+  cook: { name: "厨艺", ic: "🍳", how: "在家做饭、新天地上烹饪课、夜市摆摊", use: "自己开的店散客更多" },
+  fit: { name: "体能", ic: "💪", how: "世纪公园跑步、滴水湖骑行、送外卖、跑腿", use: "上班和打工掉的精力更少" },
+  drive: { name: "驾驶", ic: "🚗", how: "五角场驾校练车、开网约车", use: `练到 3 级考出驾照，解锁开网约车；坐车更快` },
+  sh: { name: "上海话", ic: "🗨️", how: "和王阿姨、陈爷叔、李妈妈、扫地阿姨聊天，跟爷叔学上海话", use: "和本地 NPC 的好感涨得更快" },
+};
+export const SKILL_MAX = 20;
+export const SKILL_BONUS = 0.001; // 每级 +0.1%
+export const LICENSE_LV = 3;
+// 从 n 级升到 n+1 级需要 3+n 点经验，满 20 级共 250 点
+export function skillLv(xp: number) { let lv = 0, need = 3; while (lv < SKILL_MAX && xp >= need) { xp -= need; lv++; need = 3 + lv; } return { lv, into: xp, need: lv >= SKILL_MAX ? 0 : need }; }
+export const sLv = (s: State, k: SkillId) => skillLv(s.sk?.[k] || 0).lv;
+export const sBonus = (s: State, k: SkillId) => sLv(s, k) * SKILL_BONUS;
+function gainSkills(s: State, g: Partial<Record<SkillId, number>>) {
+  const ups: string[] = [];
+  s.sk = { ...(s.sk || {}) };
+  for (const k in g) {
+    const id = k as SkillId, before = sLv(s, id);
+    s.sk[id] = (s.sk[id] || 0) + (g[id] || 0);
+    const after = sLv(s, id);
+    if (after > before) { ups.push(`${SKILLS[id].name} ${after} 级`); if (id === "drive" && before < LICENSE_LV && after >= LICENSE_LV) ups.push("考出驾照了，可以去机场开网约车"); }
+  }
+  if (ups.length) log(s, `能力提升：${ups.join("，")}。`);
+  return ups;
+}
+// 每个活动练什么能力
+const LOCAL_NPCS = new Set(["ayi", "yeshu", "mama", "sao"]);
+const GIG_SKILLS: Partial<Record<PlaceId, Partial<Record<SkillId, number>>>> = { njl: { fit: 1 }, chp: { talk: 1, cook: 1 }, wjc: { talk: 1, pro: 1 }, pvg: { drive: 1 }, sha: { drive: 1 }, bund: { talk: 1 }, xtd: { talk: 1 }, ljz: { fit: 1 } };
+const TALK_GIGS = new Set<PlaceId>(["chp", "bund", "wjc", "xtd"]), DRIVE_GIGS = new Set<PlaceId>(["pvg", "sha"]);
+const LABEL_SKILLS: [RegExp, Partial<Record<SkillId, number>>][] = [[/书院/, { pro: 2 }], [/网课/, { pro: 3 }], [/在家做饭/, { cook: 2 }], [/烹饪课/, { cook: 5 }], [/跑一圈/, { fit: 3 }], [/骑行|骑车/, { fit: 3 }], [/驾校/, { drive: 4 }], [/学上海话/, { sh: 4 }], [/吐槽|聊/, { talk: 1 }]];
+
 /* ---------- 职业成长 ---------- */
 export const LEVELS: Record<JobId, string[]> = {
   coder: ["初级码农", "码农", "高级工程师", "技术专家", "技术总监"],
@@ -106,15 +142,15 @@ export const NPCS: Record<string, { name: string; line: string }> = {
 };
 
 type Act = [label: string, mins: number, cost: number, eff: Partial<Stats>, kind?: "work" | "overtime" | "gig" | "interview" | "rent" | "movein" | "trip" | null, npc?: string];
-const HOME_ACTS: Act[] = [["困觉（睡一觉）", 480, 0, { energy: 70, hunger: -25 }], ["刷手机", 60, 0, { fun: 15, energy: -5 }], ["外卖点一份炸猪排", 40, 38, { hunger: 45 }]];
+const HOME_ACTS: Act[] = [["困觉（睡一觉）", 480, 0, { energy: 70, hunger: -25 }], ["在家做饭", 60, 25, { hunger: 45, fun: 3 }], ["刷网课学技能", 120, 49, { energy: -8, fun: -5 }], ["刷手机", 60, 0, { fun: 15, energy: -5 }], ["外卖点一份炸猪排", 40, 38, { hunger: 45 }]];
 export const ACTS: Record<PlaceId, Act[]> = {
   gongfang: HOME_ACTS, jiangjing: HOME_ACTS, yangfang: HOME_ACTS, sjxc: HOME_ACTS,
-  home: [["困觉（睡一觉）", 480, 0, { energy: 70, hunger: -25 }], ["吃王阿姨的菜泡饭", 30, 0, { hunger: 35, social: 5 }, null, "ayi"], ["刷手机", 60, 0, { fun: 15, energy: -5 }], ["外卖点一份炸猪排", 40, 38, { hunger: 45 }]],
+  home: [["困觉（睡一觉）", 480, 0, { energy: 70, hunger: -25 }], ["吃王阿姨的菜泡饭", 30, 0, { hunger: 35, social: 5 }, null, "ayi"], ["在家做饭", 60, 25, { hunger: 45, fun: 3 }], ["刷网课学技能", 120, 49, { energy: -8, fun: -5 }], ["刷手机", 60, 0, { fun: 15, energy: -5 }], ["外卖点一份炸猪排", 40, 38, { hunger: 45 }]],
   metro: [["在站台等下一班", 20, 0, { fun: -3 }], ["便利店买杯豆浆", 10, 6, { hunger: 10, energy: 3 }]],
   ljz: [["去楼下买饭团", 15, 9, { hunger: 20 }], ["和同事吐槽老板", 30, 0, { fun: 10, social: 10 }]],
   wk: [["买杯拿铁坐一下午", 120, 36, { fun: 22, energy: 8 }], ["扫街拍梧桐", 60, 0, { fun: 15 }, null, "lily"]],
   tzf: [["逛小店", 60, 30, { fun: 18 }]],
-  chp: [["吃生煎和小馄饨", 40, 28, { hunger: 50, fun: 5 }, null, "yeshu"], ["排队买南翔小笼", 90, 45, { hunger: 55, fun: -5 }]],
+  chp: [["吃生煎和小馄饨", 40, 28, { hunger: 50, fun: 5 }, null, "yeshu"], ["跟陈爷叔学上海话", 60, 0, { fun: 6, social: 4 }, null, "yeshu"], ["排队买南翔小笼", 90, 45, { hunger: 55, fun: -5 }]],
   bund: [["江边看夜景", 60, 0, { fun: 25, energy: -5 }], ["和朋友散步", 90, 0, { fun: 20, social: 15 }, null, "any"]],
   rmgy: [["看相亲角的简历", 45, 0, { fun: 12 }, null, "mama"], ["被阿姨盘问家底", 30, 0, { fun: -10, social: 12 }, null, "mama"]],
   ykl: [["路边喝精酿", 120, 60, { fun: 30, energy: -15, social: 12 }, null, "max"], ["蹦迪到天亮", 300, 180, { fun: 40, energy: -45, social: 20 }]],
@@ -124,10 +160,10 @@ export const ACTS: Record<PlaceId, Act[]> = {
   dsh: [["环湖骑行", 120, 30, { fun: 25, energy: -15 }], ["海边看日出", 90, 0, { fun: 22, energy: -5 }], ["吃一顿海鲜大排档", 80, 160, { hunger: 60, fun: 15 }], ["逛海昌海洋公园", 240, 290, { fun: 40, energy: -18 }]],
   njl: [["逛第一百货", 90, 60, { fun: 18, energy: -8 }], ["买沈大成青团", 20, 18, { hunger: 22, fun: 4 }], ["和扫地阿姨聊两句", 15, 0, { social: 8 }, null, "sao"]],
   jas: [["进寺烧香许愿", 45, 10, { fun: 12, energy: 3 }, null, "shifu"], ["逛久光百货", 90, 80, { fun: 20, energy: -10 }]],
-  xtd: [["露台上喝一杯", 120, 88, { fun: 28, social: 10, energy: -10 }], ["吃一顿本帮菜", 70, 120, { hunger: 60, fun: 12 }], ["看一场脱口秀", 120, 150, { fun: 35, social: 8 }]],
+  xtd: [["上烹饪课", 180, 180, { fun: 8, energy: -8 }], ["露台上喝一杯", 120, 88, { fun: 28, social: 10, energy: -10 }], ["吃一顿本帮菜", 70, 120, { hunger: 60, fun: 12 }], ["看一场脱口秀", 120, 150, { fun: 35, social: 8 }]],
   xjh: [["参观天主教堂", 40, 0, { fun: 14 }], ["逛港汇恒隆", 120, 50, { fun: 16, energy: -12 }], ["在书院看一下午书", 180, 0, { fun: 18, energy: 6 }]],
   hq: [["坐高铁去苏州一日游", 600, 260, { fun: 45, energy: -40, hunger: -20 }], ["站里吃碗兰州拉面", 30, 32, { hunger: 45 }]],
-  wjc: [["去复旦蹭一节课", 100, 0, { fun: 12, energy: -8, social: 6 }, null, "tutu"], ["大学路撸串", 90, 70, { hunger: 50, fun: 15, social: 10 }]],
+  wjc: [["去复旦蹭一节课", 100, 0, { fun: 12, energy: -8, social: 6 }, null, "tutu"], ["大学路撸串", 90, 70, { hunger: 50, fun: 15, social: 10 }], ["去驾校练车", 240, 300, { energy: -12, fun: -3 }]],
   expo: [["看一场展览", 120, 60, { fun: 24, energy: -10 }], ["江边骑车", 60, 15, { fun: 18, energy: -10 }]],
   sjgy: [["草坪上野餐", 150, 45, { fun: 25, hunger: 25, social: 8 }], ["绕湖跑一圈", 50, 0, { fun: 10, energy: -15 }], ["放风筝", 60, 20, { fun: 18 }]],
   zj: [["去科技公司面试", 180, 0, { energy: -15, fun: -5 }, "interview"], ["吃园区食堂", 30, 18, { hunger: 40 }]],
@@ -214,7 +250,7 @@ export type Result = { state: State; toast?: string; label?: string };
 export function travel(prev: State, to: PlaceId): Result {
   if (to === prev.at) return { state: prev };
   const s = structuredClone(prev);
-  const { cost, mins } = trip(s.at, to);
+  const { cost } = trip(s.at, to), mins = Math.round(trip(s.at, to).mins * (1 - sBonus(s, "drive")));
   if (s.money < cost) {
     // 没钱坐地铁也能走回家，只是慢
     if (to !== homeOf(s)) return { state: prev, toast: "钞票不够买地铁票了，只能先走回家" };
@@ -232,7 +268,9 @@ export function travel(prev: State, to: PlaceId): Result {
 export function act(prev: State, i: number): Result {
   const a = actsAt(prev, prev.at)[i];
   if (!a) return { state: prev };
-  const [label, mins, cost, eff, kind, npc] = a;
+  const [label, mins, cost, eff0, kind, npc] = a;
+  // 体能：所有掉精力的事少掉一点
+  const eff: Partial<Stats> = { ...eff0 }; if ((eff.energy || 0) < 0) eff.energy = (eff.energy || 0) * (1 - sBonus(prev, "fit"));
   if (cost > 0 && prev.money < cost) return { state: prev, toast: "钞票不够" };
   const s = structuredClone(prev);
   let toast: string | undefined;
@@ -242,10 +280,10 @@ export function act(prev: State, i: number): Result {
     if (s.energy < (kind === "overtime" ? 45 : 25)) return { state: prev, toast: kind === "overtime" ? "这点精力加不动班了" : "太累了，先回去困一觉" };
     // 绩效：精力和开心都好就有奖金，状态差容易出错
     const form = (s.energy + s.fun) / 2;
-    let pay = basePay(s) * (kind === "overtime" ? 1.5 : 1), note = "";
+    let pay = basePay(s) * (kind === "overtime" ? 1.5 : 1) * (1 + sBonus(s, "pro")), note = "";
     if (form >= 70) { pay *= 1.2; note = "状态好，拿了绩效奖金"; } else if (form < 35) { pay *= 0.6; note = "状态太差出了错，被扣了钱"; }
     pay = Math.round(pay);
-    s.worked[s.day] = 1; s.money += pay;
+    s.worked[s.day] = 1; s.money += pay; gainSkills(s, kind === "overtime" ? { pro: 2, fit: 1 } : { pro: 1 });
     const gain = (kind === "overtime" ? 2 : 1) + (form >= 70 ? 1 : 0);
     s.xp = (s.xp || 0) + gain;
     log(s, `${kind === "overtime" ? "上班加班到很晚" : "上了一天班"}，赚了¥${pay}${note ? `，${note}` : ""}。经验+${gain}。`);
@@ -262,13 +300,16 @@ export function act(prev: State, i: number): Result {
     const h = Math.floor(s.min / 60);
     if (!inHours(h, g.from, g.to)) return { state: prev, toast: `现在没这个活，${g.from}点到${g.to}点才有` };
     if (s.energy < 15) return { state: prev, toast: "太累了，干不动了" };
+    if (DRIVE_GIGS.has(pl as PlaceId) && sLv(s, "drive") < LICENSE_LV) return { state: prev, toast: `要先考出驾照（驾驶 ${LICENSE_LV} 级，去五角场驾校练车）` };
     let pay = g.pay[0] + Math.random() * (g.pay[1] - g.pay[0]);
     let note = "";
     if (g.peak?.some(([a, b]) => inHours(h, a, b))) { pay *= 1.5; note = "正赶上高峰"; }
     if (pl === "njl" && rainy(s) && Math.random() < 0.5) { pay *= 1.4; note = "下雨天单价高"; }
     if (pl === "chp" && rainy(s) && Math.random() < 0.5) { pay *= 0.4; note = "下雨没什么人"; }
+    if (TALK_GIGS.has(pl as PlaceId)) pay *= 1 + sBonus(s, "talk");
+    if (DRIVE_GIGS.has(pl as PlaceId)) pay *= 1 + sBonus(s, "drive");
     pay = Math.round(pay);
-    s.money += pay - cost; apply(s, eff); advance(s, mins);
+    s.money += pay - cost; apply(s, eff); advance(s, mins); gainSkills(s, GIG_SKILLS[pl as PlaceId] || {});
     log(s, `${g.label}，${cost ? `扣掉成本¥${cost}，` : ""}赚了¥${pay}${note ? `（${note}）` : ""}。`);
     check(s);
     return { state: s, toast: `${g.label}赚了¥${pay}`, label: g.label };
@@ -289,7 +330,7 @@ export function act(prev: State, i: number): Result {
   if (kind === "interview") {
     if (s.job === "engineer") return { state: prev, toast: "侬已经在张江上班了" };
     s.money -= cost; apply(s, eff); advance(s, mins);
-    if (s.energy >= 30 && s.fun >= 25 && Math.random() < 0.45) { s.job = "engineer"; s.lv = 1; s.xp = 0; log(s, "面试通过！换工作当上了张江算法工程师，基本日薪¥560。"); toast = "面试通过，换新工作了！"; }
+    if (s.energy >= 30 && s.fun >= 25 && Math.random() < 0.45 + sBonus(s, "pro")) { s.job = "engineer"; s.lv = 1; s.xp = 0; log(s, "面试通过！换工作当上了张江算法工程师，基本日薪¥560。"); toast = "面试通过，换新工作了！"; }
     else log(s, "面试没过。HR 说再沉淀沉淀，状态好点再来。");
     check(s);
     return { state: s, toast, label };
@@ -299,13 +340,15 @@ export function act(prev: State, i: number): Result {
   if (label.startsWith("困觉")) apply(s, HOMES[homeOf(s)].perk);
   if (npc) {
     const ids = npc === "any" ? Object.keys(s.friends) : [npc];
-    ids.forEach((id) => (s.friends[id] = Math.min(100, (s.friends[id] || 0) + 12)));
+    ids.forEach((id) => (s.friends[id] = Math.min(100, (s.friends[id] || 0) + 12 * (1 + sBonus(s, "sh")))));
+    if (npc !== "any") gainSkills(s, LOCAL_NPCS.has(npc) ? { talk: 1, sh: 2 } : { talk: 1 });
     if (npc !== "any") {
       const n = NPCS[npc]; log(s, `${n.name}：${n.line}`);
       if (s.friends[npc] >= 60 && !s.flags["f_" + npc]) { s.flags["f_" + npc] = 1; toast = `侬和${n.name}成了好朋友！`; }
     }
   }
   if (kind !== "work" && kind !== "overtime") log(s, `${label}${cost ? `，花了¥${cost}` : ""}。`);
+  if (!kind) for (const [re, g] of LABEL_SKILLS) if (re.test(label)) { const ups = gainSkills(s, g); if (ups.length && !toast) toast = `能力提升：${ups[0]}`; break; }
   check(s);
   return { state: s, toast, label };
 }
@@ -342,6 +385,7 @@ export function coop(prev: State, i: number, partnerId: string, partnerName: str
   s.pals = { ...(s.pals || {}) };
   const p = (s.pals[partnerId] = { name: partnerName, n: (s.pals[partnerId]?.n || 0) + 1 });
   s.log[0] = [s.log[0][0], `和${partnerName}一起${a[0].replace(/（.*?）/, "")}，开心多了。`];
+  gainSkills(s, { talk: 1 });
   return { state: s, label: `和${partnerName}一起${a[0]}`, toast: p.n === 3 ? `侬和${partnerName}成了好朋友！` : r.toast };
 }
 

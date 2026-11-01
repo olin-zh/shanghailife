@@ -1,6 +1,6 @@
 import { env, readCookie, userFromToken, SESSION_COOKIE, json } from "../../../../lib/auth";
 import { mutate, loadSave } from "../../../../lib/store";
-import { PLACES } from "../../../../lib/game";
+import { PLACES, sBonus } from "../../../../lib/game";
 import { COST_RATE, DEPOSIT, KINDS, SLOTS, priceOk, settle, visitShop, type ShopKind } from "../../../../lib/shops";
 
 type Row = { owner: string | null; owner_name: string | null; kind: ShopKind | null; name: string | null; price: number | null; till: number; npc: number; settled_at: number | null };
@@ -10,7 +10,8 @@ async function settleNow(DB: D1Database, id: number) {
   for (let i = 0; i < 6; i++) {
     const r = await DB.prepare("SELECT owner, owner_name, kind, name, price, till, npc, settled_at FROM shops WHERE id = ?").bind(id).first<Row>();
     if (!r?.owner || !r.kind || !r.price) return r;
-    const now = Date.now(), st = settle(id, r.kind, r.price, r.till, r.npc, r.settled_at ?? now, now);
+    const owner = (await loadSave(DB, r.owner)).state;
+    const now = Date.now(), st = settle(id, r.kind, r.price, r.till, r.npc, r.settled_at ?? now, now, owner ? sBonus(owner, "cook") : 0);
     const ok = await DB.prepare("UPDATE shops SET till = ?, npc = ?, settled_at = ? WHERE id = ? AND settled_at IS ?").bind(st.till, st.npc, now, id, r.settled_at).run();
     if (ok.meta.changes === 1) return { ...r, till: st.till, npc: st.npc, settled_at: now };
   }

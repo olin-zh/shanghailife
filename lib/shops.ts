@@ -25,9 +25,9 @@ export function npcPerHour(slot: number, kind: ShopKind, price: number) {
   const customers = SLOTS[slot].traffic * NPC_PER_HOUR * Math.min(2.5, Math.pow(ref / price, 1.6));
   return { customers, profit: customers * (price - ref * COST_RATE) };
 }
-export function settle(slot: number, kind: ShopKind, price: number, till: number, npc: number, since: number, now: number) {
+export function settle(slot: number, kind: ShopKind, price: number, till: number, npc: number, since: number, now: number, boost = 0) {
   const h = Math.max(0, (now - since) / 3600_000);
-  const { customers, profit } = npcPerHour(slot, kind, price);
+  const base = npcPerHour(slot, kind, price), customers = base.customers * (1 + boost), profit = base.profit * (1 + boost); // boost = 店主厨艺加成
   return { till: till + h * (profit - SLOTS[slot].rent / 24), npc: npc + customers * h };
 }
 export const priceOk = (kind: ShopKind, p: number) => Number.isInteger(p) && p >= Math.ceil(KINDS[kind].ref * 0.3) && p <= KINDS[kind].ref * 4;
