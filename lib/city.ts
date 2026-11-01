@@ -2,7 +2,8 @@
 import * as THREE from "three";
 import { PLACES, type PlaceId } from "./game";
 import { PLOT_COUNT, SUBURB, plotName, plotPos, type Plot } from "./plots";
-import { geo, HUANGPU, SUZHOU_CREEK } from "./geo";
+import { geo } from "./geo";
+import { CELL, COLS, ROWS, XMIN, ZMIN, XMAX, ZMAX, T, buildGrid, centerOf, ROADS, RIVER_PTS, CREEK_PTS, COAST_PTS, SEA_POLY, GREENS, DISTRICTS, METROS } from "./grid";
 import { BOAT_COUNT, HUANGPU_BOATS, type Boat } from "./boats";
 import { KINDS, SLOTS, type Shop } from "./shops";
 import { EKINDS, ESTATE_COUNT, LOTS, estatePos, type Estate } from "./estates";
@@ -47,7 +48,7 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
     const w = root.clientWidth, h = root.clientHeight, a = w / h, v = VIEW / zoom;
     cam.left = -v * a; cam.right = v * a; cam.top = v; cam.bottom = -v; cam.updateProjectionMatrix();
     renderer.setSize(w, h, false);
-    root.classList.toggle("zoomed", zoom > 1.5);
+    root.classList.toggle("zoomed", zoom > 1.5); if (typeof gridLines !== "undefined") gridLines.visible = zoom > 1.5;
   };
   addEventListener("resize", resize);
 
@@ -83,54 +84,93 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(700, 700), mats.grass);
   ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
 
-  const ribbon = (pts: number[][], w: number) => {
+  const ribbon = (pts: number[][], w: number, m: THREE.Material = mats.water, y = 0.05) => {
     const L: number[][] = [], R: number[][] = [];
     pts.forEach(([x, z], i) => {
       const [nx, nz] = pts[Math.min(i + 1, pts.length - 1)], [px, pz] = pts[Math.max(i - 1, 0)];
       let dx = nx - px, dz = nz - pz; const l = Math.hypot(dx, dz); dx /= l; dz /= l;
-      L.push([x + dz * w / 2, z - dx * w / 2]); R.push([x - dz * w / 2, z + dx * w / 2]);
+      // 折角处按斜接展宽，保证 45° 拐弯时宽度不变
+      let k = 1; if (i > 0 && i < pts.length - 1) { const ax = x - px, az = z - pz, al = Math.hypot(ax, az), bx = nx - x, bz = nz - z, bl = Math.hypot(bx, bz); const c = (ax * bx + az * bz) / (al * bl); k = 1 / Math.max(0.5, Math.sqrt((1 + c) / 2)); }
+      L.push([x + dz * w / 2 * k, z - dx * w / 2 * k]); R.push([x - dz * w / 2 * k, z + dx * w / 2 * k]);
     });
     const s = new THREE.Shape(); const all = [...L, ...R.reverse()];
     s.moveTo(all[0][0], -all[0][1]); all.slice(1).forEach((p) => s.lineTo(p[0], -p[1]));
-    const g = new THREE.Mesh(new THREE.ShapeGeometry(s), mats.water); g.rotation.x = -Math.PI / 2; g.position.y = 0.05; g.receiveShadow = true; scene.add(g);
+    const g = new THREE.Mesh(new THREE.ShapeGeometry(s), m); g.rotation.x = -Math.PI / 2; g.position.y = y; g.receiveShadow = true; scene.add(g); return g;
   };
   const G = (lon: number, lat: number) => { const p = geo(lon, lat); return [p.x, p.z]; };
-  let coastPts: number[][] = [];
-  const riverPts = HUANGPU.map(([a, b]) => G(a, b)), creekPts = SUZHOU_CREEK.map(([a, b]) => G(a, b));
-  ribbon(riverPts, 6); ribbon(creekPts, 2.2);
-  // 东海：沿真实海岸线（简化）往外铺海面
-  { const coast = [[121.62, 31.45], [121.76, 31.32], [121.86, 31.2], [121.905, 31.1], [121.965, 31.0], [121.985, 30.9], [121.95, 30.84], [121.84, 30.83], [121.6, 30.81], [121.2, 30.76], [120.9, 30.72]].map(([a, b]) => G(a, b));
-    const sh = new THREE.Shape(); sh.moveTo(coast[0][0], -(coast[0][1])); coast.slice(1).forEach((p) => sh.lineTo(p[0], -p[1]));
-    [[-60, 260], [400, 260], [400, -200], [coast[0][0] + 40, -200]].forEach(([x, z]) => sh.lineTo(x, -z));
-    const sea = new THREE.Mesh(new THREE.ShapeGeometry(sh), M(0x4f9fc4)); sea.rotation.x = -Math.PI / 2; sea.position.y = 0.04; sea.receiveShadow = true; scene.add(sea);
-    coastPts = coast; }
+  const grid = buildGrid();
+  const riverPts = RIVER_PTS as number[][], creekPts = CREEK_PTS as number[][];
+  const coastPts = COAST_PTS as number[][];
+  ribbon(riverPts, 7.5); ribbon(creekPts, 2.6);
+  { const sh = new THREE.Shape(); sh.moveTo(SEA_POLY[0][0], -SEA_POLY[0][1]); SEA_POLY.slice(1).forEach((p) => sh.lineTo(p[0], -p[1]));
+    const sea = new THREE.Mesh(new THREE.ShapeGeometry(sh), M(0x4f9fc4)); sea.rotation.x = -Math.PI / 2; sea.position.y = 0.04; sea.receiveShadow = true; scene.add(sea); }
 
   const road = (x1: number, z1: number, x2: number, z2: number, w = 1.6) => {
-    const l = Math.hypot(x2 - x1, z2 - z1); const g = new THREE.Mesh(new THREE.BoxGeometry(l + w, 0.08, w), mats.road);
+    const l = Math.hypot(x2 - x1, z2 - z1); const g = new THREE.Mesh(new THREE.BoxGeometry(l + w * 0.42, 0.08, w), mats.road);
     g.position.set((x1 + x2) / 2, 0.04, (z1 + z2) / 2); g.rotation.y = -Math.atan2(z2 - z1, x2 - x1); g.receiveShadow = true; scene.add(g);
   };
-  // 主要道路（按真实走向简化成折线）
-  const ROADS: { w: number; pts: [number, number][] }[] = [
-    { w: 2, pts: [[121.32, 31.197], [121.40, 31.206], [121.445, 31.2215], [121.475, 31.2262], [121.4915, 31.2305]] }, // 延安路高架
-    { w: 1.6, pts: [[121.44, 31.2245], [121.465, 31.231], [121.4765, 31.2345], [121.4905, 31.2398]] }, // 南京西路—南京东路
-    { w: 2, pts: [[121.462, 31.30], [121.462, 31.235], [121.464, 31.18]] }, // 南北高架
-    { w: 1.6, pts: [[121.43, 31.205], [121.455, 31.213], [121.476, 31.2205], [121.494, 31.2255]] }, // 淮海路
-    { w: 1.6, pts: [[121.435, 31.193], [121.455, 31.199], [121.48, 31.207]] }, // 肇嘉浜路
-    { w: 1.6, pts: [[121.4895, 31.20], [121.4915, 31.222], [121.4905, 31.2445], [121.497, 31.252]] }, // 中山东路（外滩）
-    { w: 1.6, pts: [[121.494, 31.2505], [121.505, 31.27], [121.514, 31.299]] }, // 四平路→五角场
-    { w: 1.6, pts: [[121.514, 31.299], [121.53, 31.28], [121.545, 31.27]] }, // 黄兴路
-    { w: 2, pts: [[121.502, 31.2395], [121.525, 31.229], [121.5527, 31.2183], [121.596, 31.204]] }, // 世纪大道→张江
-    { w: 1.6, pts: [[121.503, 31.2445], [121.515, 31.247], [121.53, 31.253]] }, // 浦东大道
-    { w: 1.6, pts: [[121.522, 31.258], [121.522, 31.22], [121.515, 31.18]] }, // 杨高路
-    { w: 1.6, pts: [[121.478, 31.19], [121.505, 31.185], [121.52, 31.18]] }, // 世博大道
-    { w: 2, pts: [[121.435, 31.193], [121.38, 31.15], [121.30, 31.08], [121.228, 31.04]] }, // 沪闵路—G60 去松江
-    { w: 2, pts: [[121.596, 31.204], [121.70, 31.17], [121.795, 31.145]] }, // 迎宾高速去浦东机场
-    { w: 2, pts: [[121.596, 31.204], [121.68, 31.10], [121.80, 30.98], [121.915, 30.91]] }, // S2 沪芦高速去临港
-    { w: 1.6, pts: [[121.344, 31.1955], [121.33, 31.197]] }, // 虹桥枢纽连接
-  ];
-  ROADS.forEach((r) => { const q = r.pts.map(([a, b]) => G(a, b)); for (let i = 1; i < q.length; i++) road(q[i - 1][0], q[i - 1][1], q[i][0], q[i][1], r.w); });
-  const segs = ROADS.flatMap((r) => r.pts.map(([a, b]) => G(a, b)).slice(1).map((q, i, arr) => [i ? arr[i - 1] : G(...r.pts[0]), q]));
-  // 跨江大桥：沿桥位处江的法线方向架桥
+  // 主要道路：按真实走向折成 0°/45°/90°
+  const roadMat = mats.road;
+  ROADS.forEach((r) => ribbon(r.pts, r.w, roadMat, 0.07));
+  const segs: number[][][] = ROADS.flatMap((r) => r.pts.slice(1).map((q, i) => [r.pts[i], q]));
+  // 地铁线：细彩线，几条线在同一格时左右错开
+  METROS.forEach((m, k) => { const off = (k - 2) * 0.32; ribbon(m.pts.map(([x, z]) => [x + off, z + off]), 0.42, new THREE.MeshBasicMaterial({ color: m.color }), 0.1); });
+
+  /* ---- 网格：公园、绿带、行道树、街区楼 ---- */
+  const dummy = new THREE.Object3D();
+  const instanced = (geo3: THREE.BufferGeometry, m: THREE.Material, list: number[][], shadow = true) => {
+    if (!list.length) return;
+    const im = new THREE.InstancedMesh(geo3, m, list.length);
+    list.forEach(([x, y, z, sx, sy, sz, ry = 0], k) => { dummy.position.set(x, y, z); dummy.scale.set(sx, sy, sz); dummy.rotation.set(0, ry, 0); dummy.updateMatrix(); im.setMatrixAt(k, dummy.matrix); });
+    im.castShadow = shadow; im.receiveShadow = true; scene.add(im); return im;
+  };
+  const unitBox = new THREE.BoxGeometry(1, 1, 1); unitBox.translate(0, 0.5, 0);
+  const parkTiles: number[][] = [], trunks: number[][] = [], crowns: number[][] = [], crowns2: number[][] = [];
+  const towers: Record<string, number[][]> = { white: [], grey: [], glass: [], glass2: [], brick: [] };
+  const nearPlace = (x: number, z: number, r: number) => { for (const k in PLACES) { const p = PLACES[k as PlaceId]; if (Math.hypot(p.x - x, p.z - z) < r) return true; } return false; };
+  const addTree = (x: number, z: number, sc: number) => { trunks.push([x, 0, z, 0.35 * sc, 1 * sc, 0.35 * sc]); (rand() < 0.5 ? crowns : crowns2).push([x, 1.5 * sc, z, sc, sc, sc]); };
+  const lotSet = new Set<string>(); for (let i = 0; i < ESTATE_COUNT; i++) { const e = estatePos(i); lotSet.add(`${Math.floor((e.x - XMIN) / CELL)},${Math.floor((e.z - ZMIN) / CELL)}`); }
+  const riverXAt = (z: number) => { let best = riverPts[0]; for (const p of riverPts) if (Math.abs(p[1] - z) < Math.abs(best[1] - z)) best = p; return best[0]; };
+  for (let j = 0; j < ROWS; j++) for (let i = 0; i < COLS; i++) {
+    const n = j * COLS + i, t = grid.type[n], [x, z] = centerOf(i, j);
+    if (t === T.Park) {
+      parkTiles.push([x, 0.02, z, CELL, 0.06, CELL]);
+      for (let k = 0; k < 2; k++) { const tx = x + rnd(-1.5, 1.5), tz = z + rnd(-1.5, 1.5); if (!nearPlace(tx, tz, 6)) addTree(tx, tz, rnd(0.7, 1.05)); }
+      continue;
+    }
+    if (t !== T.Land || lotSet.has(`${i},${j}`)) continue;
+    const r = Math.hypot(x, z), com = grid.zone[n] === 1;
+    const p = r < 25 ? 0.92 : r < 50 ? 0.75 : r < 80 ? 0.45 : com ? 0.25 : 0.07;
+    if (rand() > p) { if (r > 60 && rand() < 0.5) addTree(x + rnd(-1.4, 1.4), z + rnd(-1.4, 1.4), rnd(0.6, 1)); continue; }
+    const east = x > riverXAt(z) && z > -40 && z < 60;
+    const base = com ? (r < 30 ? 6 : 3.5) : 1.6, h = rnd(1.5, 4) + base + Math.max(0, 40 - r) / (east ? 2.5 : 8);
+    const w = rnd(2, 3.1), d = rnd(2, 3.1), key = east && com ? (rand() < 0.6 ? "glass" : "glass2") : com ? (rand() < 0.5 ? "white" : "glass2") : r < 35 && !east ? (rand() < 0.35 ? "brick" : "grey") : rand() < 0.5 ? "white" : "grey";
+    towers[key].push([x + rnd(-0.4, 0.4), 0, z + rnd(-0.4, 0.4), w, Math.min(h, com ? 18 : 7), d]);
+  }
+  instanced(unitBox, mats.park, parkTiles, false);
+  const trunkG = new THREE.CylinderGeometry(0.4, 0.55, 1, 6); trunkG.translate(0, 0.5, 0);
+  instanced(trunkG, mats.wood, trunks); instanced(new THREE.IcosahedronGeometry(0.9, 0), mats.green, crowns); instanced(new THREE.IcosahedronGeometry(0.9, 0), mats.dkgreen, crowns2);
+  instanced(unitBox, mats.white, towers.white); instanced(unitBox, mats.grey, towers.grey); instanced(unitBox, mats.glass, towers.glass); instanced(unitBox, mats.glass2, towers.glass2); instanced(unitBox, mats.brick, towers.brick);
+  // 佘山：一座小山
+  for (const g of GREENS) if (g.hill) { const [cx, cz] = centerOf(g.i, g.j); const hill = new THREE.Mesh(new THREE.ConeGeometry(CELL * g.w * 0.6, 7, 9), mats.dkgreen); hill.position.set(cx + CELL * (g.w - 1) / 2, 3.5, cz + CELL * (g.h - 1) / 2); hill.castShadow = true; scene.add(hill); }
+  // 区界：相邻两格属于不同区，就在它们之间画一段线
+  { const pts: number[] = [];
+    const land = (n: number) => grid.type[n] !== T.Sea && grid.type[n] !== T.River;
+    for (let j = 0; j < ROWS; j++) for (let i = 0; i < COLS; i++) {
+      const n = j * COLS + i; if (!land(n)) continue;
+      if (i + 1 < COLS && land(n + 1) && grid.district[n + 1] !== grid.district[n]) { const x = XMIN + (i + 1) * CELL, z = ZMIN + j * CELL; pts.push(x, 0.12, z, x, 0.12, z + CELL); }
+      if (j + 1 < ROWS && land(n + COLS) && grid.district[n + COLS] !== grid.district[n]) { const x = XMIN + i * CELL, z = ZMIN + (j + 1) * CELL; pts.push(x, 0.12, z, x + CELL, 0.12, z); }
+    }
+    const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+    scene.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x6d7f5f, transparent: true, opacity: 0.55 }))); }
+  // 格子线：放大时才显示
+  const gridLines = (() => { const pts: number[] = [];
+    for (let i = 0; i <= COLS; i++) { const x = XMIN + i * CELL; pts.push(x, 0.11, ZMIN, x, 0.11, ZMAX); }
+    for (let j = 0; j <= ROWS; j++) { const z = ZMIN + j * CELL; pts.push(XMIN, 0.11, z, XMAX, 0.11, z); }
+    const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+    const l = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0x3d5a3a, transparent: true, opacity: 0.3, depthWrite: false })); l.visible = false; l.renderOrder = 2; scene.add(l); return l; })();
+
+  // 跨江大桥  // 跨江大桥：沿桥位处江的法线方向架桥
   const bridgeAt = (lon: number, lat: number) => {
     const [x, z] = G(lon, lat);
     let best = 0, bd = 1e9; riverPts.forEach(([px, pz], i) => { const d = Math.hypot(px - x, pz - z); if (d < bd) { bd = d; best = i; } });
@@ -344,36 +384,16 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
   const [tA, tB] = [G(121.32, 31.197), G(121.40, 31.206)];
   const train = new THREE.Group(); for (let i = 0; i < 4; i++) box(2.6, 0.9, 1, mats.white, i * 2.8, 0, 0, train); box(11, 0.08, 1.02, mats.red, 4.2, 0.55, 0, train); train.rotation.y = -Math.atan2(tB[1] - tA[1], tB[0] - tA[0]); scene.add(train);
 
-  const segDist = (x: number, z: number, a: number[], b: number[]) => { const vx = b[0] - a[0], vz = b[1] - a[1], l2 = vx * vx + vz * vz || 1; const t = Math.max(0, Math.min(1, ((x - a[0]) * vx + (z - a[1]) * vz) / l2)); return Math.hypot(x - a[0] - t * vx, z - a[1] - t * vz); };
-  const near = (pts: number[][], x: number, z: number, r: number) => pts.some((p, i) => i > 0 && segDist(x, z, pts[i - 1], p) < r);
-  const free = (x: number, z: number) => {
-    for (const k in PLACES) { const p = PLACES[k as PlaceId]; if (Math.hypot(p.x - x, p.z - z) < 9) return false; }
-    if (Math.hypot(x - SUBURB.x, z - SUBURB.z - 10) < 32) return false;
-    if (Math.hypot(x - P.pvg.x, z - P.pvg.z) < 24 || Math.hypot(x - P.sha.x - 1, z - P.sha.z) < 17 || Math.hypot(x - P.dsh.x, z - P.dsh.z) < 32) return false;
-    for (let i = 0; i < ESTATE_COUNT; i++) { const e = estatePos(i); if (Math.abs(x - e.x) < 5 && Math.abs(z - e.z) < 5) return false; }
-    if (coastPts.length && x > 120) { let cx = -1e9; for (let i = 1; i < coastPts.length; i++) { const [a, b] = [coastPts[i - 1], coastPts[i]]; if ((a[1] - z) * (b[1] - z) <= 0 && a[1] !== b[1]) cx = Math.max(cx, a[0] + ((z - a[1]) / (b[1] - a[1])) * (b[0] - a[0])); } if (cx > -1e9 && x > cx - 4) return false; }
-    if (near(riverPts, x, z, 5.5) || near(creekPts, x, z, 2.6)) return false;
-    if (segs.some(([a, b]) => segDist(x, z, a, b) < 2.2)) return false;
-    return true;
-  };
-  // 填充街区：越靠近市中心楼越密越高；黄浦江以东是浦东玻璃楼
-  const riverXAt = (z: number) => { let best = riverPts[0]; for (const p of riverPts) if (Math.abs(p[1] - z) < Math.abs(best[1] - z)) best = p; return best[0]; };
-  for (let i = 0; i < 520; i++) {
-    const r = 6 + Math.pow(rand(), 0.8) * 105, a = rand() * Math.PI * 2, x = Math.cos(a) * r, z = Math.sin(a) * r * 0.9;
-    if (!free(x, z)) continue;
-    const east = x > riverXAt(z) && z > -40, h = rnd(1.5, 5) + Math.max(0, 40 - r) / (east ? 3 : 7);
-    box(rnd(1.8, 3), h, rnd(1.8, 3), east ? (rand() < 0.5 ? mats.glass : mats.white) : rand() < 0.3 ? mats.white : mats.grey, x, 0, z);
-  }
-  for (let i = 0; i < 380; i++) { const x = rnd(-140, 230), z = rnd(-95, 200); if (free(x, z)) tree(x, z, rnd(0.6, 1)); }
-  for (let i = 0; i < 90; i++) { const x = rnd(100, 215), z = rnd(0, 180); if (free(x, z)) box(rnd(1.8, 3), rnd(1.5, 4), rnd(1.8, 3), rand() < 0.5 ? mats.white : mats.grey, x, 0, z); }
   const cars: THREE.Mesh[] = [];
   const longSegs = segs.filter(([a, b]) => Math.hypot(b[0] - a[0], b[1] - a[1]) > 15);
   for (let i = 0; i < 18; i++) { const c = box(1.2, 0.6, 0.7, [mats.red, mats.yellow, mats.white, mats.glass2][i % 4], 0, 0.08, 0); const sg = longSegs[i % longSegs.length]; c.userData = { a: sg[0], b: sg[1], t: rand(), sp: rnd(0.0015, 0.004) * (i % 2 ? 1 : -1) }; c.rotation.y = -Math.atan2(sg[1][1] - sg[0][1], sg[1][0] - sg[0][0]); cars.push(c); }
 
   /* ---- 覆盖层 ---- */
   const labels: HTMLElement[] = [];
-  ([["黄浦江", 121.4985, 31.214, ""], ["苏州河", 121.43, 31.2405, ""], ["浦 西", 121.455, 31.253, "land"], ["浦 东", 121.535, 31.21, "land"], ["静 安", 121.44, 31.232, "land"], ["徐 汇", 121.43, 31.178, "land"], ["杨 浦", 121.53, 31.295, "land"], ["闵 行", 121.37, 31.14, "land"], ["张 江", 121.6, 31.19, "land"], ["松 江", 121.2, 31.06, "land"], ["临 港", 121.9, 30.95, "land"], ["东 海", 122.05, 31.05, ""], ["长 宁", 121.40, 31.215, "land"]] as const).map(([t, lon, lat, c]) => [t, G(lon, lat)[0], G(lon, lat)[1], c] as const).forEach(([t, x, z, c]) => {
-    const d = document.createElement("div"); d.className = "lbl " + c; d.textContent = t; d.dataset.x = String(x); d.dataset.z = String(z); overlay.appendChild(d); labels.push(d);
+  ([["黄浦江", 121.4985, 31.214, ""], ["苏州河", 121.43, 31.2405, ""], ["东 海", 122.05, 31.05, ""], ...DISTRICTS.map((d) => [d.name.split("").join(" "), d.label[0], d.label[1], "land"]), ...GREENS.map((g) => [g.name, null, g, "park"])] as const).forEach(([t, lon, lat, c]) => {
+    let x: number, z: number;
+    if (lon === null) { const g = lat as unknown as { i: number; j: number; w: number; h: number }; [x, z] = centerOf(g.i, g.j); x += CELL * (g.w - 1) / 2; z += CELL * (g.h - 1) / 2; } else [x, z] = G(lon as number, lat as number);
+    const d = document.createElement("div"); d.className = "lbl " + c; d.textContent = t as string; d.dataset.x = String(x); d.dataset.z = String(z); overlay.appendChild(d); labels.push(d);
   });
   const pins = {} as Record<PlaceId, HTMLButtonElement>;
   (Object.keys(PLACES) as PlaceId[]).forEach((k) => {
@@ -506,7 +526,7 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
   canvas.addEventListener("pointermove", (e) => {
     if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y; const s = (cam.right - cam.left) / root.clientWidth;
     target.copy(drag.t).addScaledVector(new THREE.Vector3(1, 0, -1).normalize(), -dx * s).addScaledVector(new THREE.Vector3(1, 0, 1).normalize(), -dy * s * 1.35);
-    target.x = Math.max(-150, Math.min(230, target.x)); target.z = Math.max(-95, Math.min(200, target.z)); placeCam();
+    target.x = Math.max(-150, Math.min(230, target.x)); target.z = Math.max(-128, Math.min(200, target.z)); placeCam();
   });
   canvas.addEventListener("pointerup", (e) => { drag = null; if (downAt && Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) < 6) pickBoat(e.clientX, e.clientY); downAt = null; });
   const setZoom = (z: number) => { zoom = Math.max(0.6, Math.min(3, z)); resize(); };
