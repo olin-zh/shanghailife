@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "shanghailife",
+  "main": "worker.ts",
+  "compatibility_date": "2025-06-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "shanghailife", "database_id": "REPLACE_WITH_D1_ID", "migrations_dir": "migrations" }
+  ],
+  "durable_objects": { "bindings": [{ "name": "CITY", "class_name": "CityRoom" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["CityRoom"] }],
+  "services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "shanghailife" }]
+}
