@@ -118,5 +118,153 @@
  "中文": [
   "中文",
   "中文"
+ ],
+ "👤 账号": [
+  "👤 Account",
+  "👤 アカウント"
+ ],
+ "账号": [
+  "Account",
+  "アカウント"
+ ],
+ "昵称": [
+  "Nickname",
+  "ニックネーム"
+ ],
+ "显示在你的地、店、游船广告和员工名单上。": [
+  "Shown on your land, shops, boat ads and staff lists.",
+  "土地・店・遊覧船広告・スタッフ一覧に表示されます。"
+ ],
+ "保存": [
+  "Save",
+  "保存"
+ ],
+ "修改密码": [
+  "Change password",
+  "パスワード変更"
+ ],
+ "设置密码": [
+  "Set a password",
+  "パスワード設定"
+ ],
+ "当前密码": [
+  "Current password",
+  "現在のパスワード"
+ ],
+ "新密码（至少 8 位）": [
+  "New password (8+ chars)",
+  "新しいパスワード（8文字以上）"
+ ],
+ "保存新密码": [
+  "Save new password",
+  "新しいパスワードを保存"
+ ],
+ "改完密码，其他设备会自动下线。": [
+  "Changing your password signs out your other devices.",
+  "パスワードを変更すると、他の端末はログアウトされます。"
+ ],
+ "登录": [
+  "Sign-in",
+  "ログイン"
+ ],
+ "让其他设备下线": [
+  "Sign out other devices",
+  "他の端末をログアウト"
+ ],
+ "退出登录": [
+  "Sign out",
+  "ログアウト"
+ ],
+ "注销账号": [
+  "Delete account",
+  "アカウント削除"
+ ],
+ "我要注销账号": [
+  "I want to delete my account",
+  "アカウントを削除する"
+ ],
+ "注销后存档、钱、名下的地和店都会删除，租的游船广告立即撤下且不退款，无法恢复。": [
+  "Deleting removes your save, money, land and shops; rented boat ads are taken down without refund. This can't be undone.",
+  "削除するとセーブ、お金、土地、店がすべて消え、レンタル中の遊覧船広告も返金なしで外されます。元に戻せません。"
+ ],
+ "输入“注销”两个字": [
+  "Type “注销” to confirm",
+  "確認のため「注销」と入力"
+ ],
+ "密码": [
+  "Password",
+  "パスワード"
+ ],
+ "算了": [
+  "Cancel",
+  "やめる"
+ ],
+ "永久注销": [
+  "Delete forever",
+  "完全に削除"
+ ],
+ "昵称改好了": [
+  "Nickname updated",
+  "ニックネームを変更しました"
+ ],
+ "昵称不能为空": [
+  "Nickname can't be empty",
+  "ニックネームを入力してください"
+ ],
+ "当前密码不对": [
+  "Current password is wrong",
+  "現在のパスワードが違います"
+ ],
+ "新密码至少 8 位": [
+  "New password needs 8+ characters",
+  "新しいパスワードは8文字以上"
+ ],
+ "密码改好了，其他设备已下线": [
+  "Password changed; other devices signed out",
+  "パスワードを変更し、他の端末をログアウトしました"
+ ],
+ "其他设备都已下线": [
+  "Other devices signed out",
+  "他の端末をログアウトしました"
+ ],
+ "请输入“注销”两个字确认": [
+  "Type “注销” to confirm",
+  "「注销」と入力して確認してください"
+ ],
+ "密码不对": [
+  "Wrong password",
+  "パスワードが違います"
+ ],
+ "账号已注销": [
+  "Account deleted",
+  "アカウントを削除しました"
+ ],
+ "注册于 {1} · 登录中的设备 {2} 台": [
+  "Joined {1} · {2} signed-in devices",
+  "登録日 {1} · ログイン中の端末 {2}台"
+ ],
+ "𝕏 用 X 账号登录": [
+  "𝕏 Signed in with X",
+  "𝕏 Xでログイン"
+ ],
+ "🛠️ 管理员": [
+  "🛠️ Admin",
+  "🛠️ 管理者"
+ ],
+ "收起": [
+  "Collapse",
+  "たたむ"
+ ],
+ "展开": [
+  "Expand",
+  "ひらく"
+ ],
+ "注销账号，余额上缴": [
+  "Account deleted, balance returned",
+  "アカウント削除・残高返納"
+ ],
+ "· 🛠️ 管理员": [
+  "· 🛠️ Admin",
+  "· 🛠️ 管理者"
  ]
 }

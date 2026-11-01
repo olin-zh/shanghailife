@@ -23,7 +23,7 @@ export default function Game() {
   const [sel, setSel] = useState<PlaceId | null>(null);
   const [cell, setCell] = useState<number | null>(null);
   const [i18nReady, setI18nReady] = useState(false);
-  const [panel, setPanel] = useState<"friends" | "log" | "help" | "chat" | "auth" | "skills" | "estates" | "money" | "admin" | null>(null);
+  const [panel, setPanel] = useState<"friends" | "log" | "help" | "chat" | "auth" | "skills" | "estates" | "money" | "admin" | "account" | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [others, setOthers] = useState<Record<string, Other>>({});
   const [chats, setChats] = useState<Chat[]>([]);
@@ -201,6 +201,10 @@ export default function Game() {
   const here = sel ? Object.values(others).filter((o) => o.at === sel) : [];
   // 底部状态卡：默认收起，点一下展开；展开后 12 秒没动或点了地图就自动收起
   const [open, setOpen] = useState(false);
+  // 右上角状态卡的高度写进 CSS 变量，右侧弹出的面板就排在它下面
+  const hudRef = useRef<HTMLElement>(null);
+  useEffect(() => { const c = document.querySelector(".chips"); if (!c) return; const set = () => document.documentElement.style.setProperty("--chips-b", Math.round(c.getBoundingClientRect().bottom) + "px"); set(); const ro = new ResizeObserver(set); ro.observe(c); addEventListener("resize", set); return () => { ro.disconnect(); removeEventListener("resize", set); }; }, []);
+  useEffect(() => { const el = hudRef.current; if (!el) return; const set = () => document.documentElement.style.setProperty("--hud-h", (el.classList.contains("hud") ? el.offsetHeight + 10 : 0) + "px"); set(); const ro = new ResizeObserver(set); ro.observe(el); return () => ro.disconnect(); }, [!!s]);
   useEffect(() => { if (!open) return; const h = setTimeout(() => setOpen(false), 12000); return () => clearTimeout(h); }, [open, s]);
   useEffect(() => { setOpen(false); }, [sel, cell, peer]);
   useEffect(() => { if (s && (!s.gender || !s.birth)) setOpen(true); }, [s?.gender, s?.birth, !!s]);
@@ -225,6 +229,7 @@ export default function Game() {
         <button className="pill" onClick={() => setPanel(panel === "estates" ? null : "estates")}>{`🏗️ 买地 · 余${allParcels().length - plots.length - estates.length}格`}</button>
         <button className="pill" onClick={() => setPanel(panel === "skills" ? null : "skills")}>🎯 能力</button>
         <button className="pill" onClick={() => setPanel(panel === "money" ? null : "money")}>💰 账本</button>
+        {user && <button className="pill" onClick={() => setPanel(panel === "account" ? null : "account")}>👤 账号</button>}
         {isAdmin && <button className="pill" onClick={() => setPanel(panel === "admin" ? null : "admin")}>🛠️ 管理{pending ? ` · ${pending} 待审` : ""}</button>}
         <button className="pill" onClick={() => setPanel(panel === "chat" ? null : "chat")}>💬 聊天</button>
         <button className="pill" onClick={() => setPanel(panel === "friends" ? null : "friends")}>🤝 朋友</button>
@@ -232,9 +237,12 @@ export default function Game() {
         <button className="pill" onClick={() => setPanel(panel === "help" ? null : "help")}>❓ 怎么玩</button>
       </nav>
 
-      <section className={"bottom" + (s && open ? "" : s ? " folded" : "")} onClick={() => { if (s && !open) setOpen(true); }}>{s ? (
+      <section ref={hudRef} className={s ? "hud" + (open ? "" : " folded") : "bottom"} onClick={() => { if (s && !open) setOpen(true); }}>{s ? (
         <>
-          <div className="who" onClick={(e) => { e.stopPropagation(); setOpen(!open); }} role="button" aria-expanded={open} title={open ? "收起" : "展开"}><b>{s.name}{s.gender ? ` ${s.gender === "m" ? "♂" : s.gender === "f" ? "♀" : ""}` : ""}{s.birth ? ` ${ageOf(s.birth)}岁` : ""} · {jobTitle(s)}</b><span className="money" style={{ color: s.money < 0 ? "var(--red)" : undefined }}>¥{s.money.toLocaleString()} <span className="fold">{open ? "▾" : "▴"}</span></span></div>
+          <div className="who" onClick={(e) => { e.stopPropagation(); setOpen(!open); }} role="button" aria-expanded={open} title={open ? "收起" : "展开"}>
+            <b>{s.name}{s.gender ? ` ${s.gender === "m" ? "♂" : s.gender === "f" ? "♀" : ""}` : ""}{s.birth ? ` ${ageOf(s.birth)}岁` : ""} <span className="fold">{open ? "▴" : "▾"}</span></b>
+            <span className="job">{jobTitle(s)}</span>
+            <span className="money" style={{ color: s.money < 0 ? "var(--red)" : undefined }}>¥{s.money.toLocaleString()}</span></div>
           {!open && <div className="mini">{status.map(([l, v], i) => <span key={l} className={v < 25 ? "low" : ""} title={l}>{["⚡", "🍜", "😊", "💬"][i]} {Math.round(v)}</span>)}</div>}
           {open && <><div className="career">
             <span>Lv{lvOf(s)}</span>
@@ -293,6 +301,7 @@ export default function Game() {
                 {hiring.map((e) => <button key={e.id} className="act" onClick={() => { setPanel(null); setCell(e.id); setSel(null); city.current?.focus(estatePlace(e.id)); }}><span>{EKINDS[e.kind!].ic}「{e.name}」· 日薪¥{e.wage}</span><small>{PLACES[estatePlace(e.id)].name}旁 · 缺 {e.openings - e.staff.length} 人</small></button>)}
               </>; })()}</>}
           {panel === "money" && <LedgerBox user={user} s={s} />}
+          {panel === "account" && user && <AccountBox onSay={say} onUser={(u) => setUser(u)} onGone={() => { setUser(null); setPanel(null); }} />}
           {panel === "admin" && isAdmin && <AdminBox onSay={say} onPending={setPending} />}
           {panel === "skills" && s && <><h2>能力</h2><p className="muted">驾驶最高 20 级、每级 +0.1%；其他能力最高 50 级、每级 +4%。</p>
             {(Object.keys(SKILLS) as SkillId[]).map((k) => { const v = skillLv(s.sk?.[k] || 0, skillMax(k)), sk = SKILLS[k]; return (
@@ -308,7 +317,6 @@ export default function Game() {
             {s?.pals && Object.keys(s.pals).length > 0 && <><h2 style={{ marginTop: 8 }}>玩家朋友</h2>{Object.entries(s.pals).map(([k, v]) => <p key={k}>{v.name} <span className="t">· 一起做过 {v.n} 次事{others[k] ? " · 在线" : ""}</span></p>)}</>}
             {Object.keys(others).length > 0 && <><h2 style={{ marginTop: 8 }}>在线玩家</h2>{Object.values(others).map((o) => <p key={o.id}><button className="link" style={{ textDecoration: "none", color: "var(--ink)", fontSize: 13 }} onClick={() => { setPeer(o.id); setSel(null); }}>{o.name}</button> <span className="t">· 在{PLACES[o.at].name}</span></p>)}</>}</>}
           {panel === "chat" && <ChatBox user={user} chats={chats} online={online === "on"} onLogin={() => setPanel("auth")} onSend={(t) => ws.current?.send(JSON.stringify({ t: "chat", text: t }))} />}
-          {user && panel !== "auth" && panel !== "chat" && <button className="link" onClick={async () => { await fetch("/api/auth/logout", { method: "POST" }); setUser(null); setPanel(null); }}>退出登录（{user.email}）</button>}
         </aside>
       )}
 
@@ -724,5 +732,42 @@ function AdminBox({ onSay, onPending }: { onSay: (t: string) => void; onPending:
     {d.signs.map((g) => <div key={g.id} style={{ marginBottom: 8 }}><img className="adimg" src={`/api/estates/${g.id}/sign?v=${g.sign_ver}`} alt={`${g.owner_name}的招牌`} /><div className="row2"><span className="sub">{g.owner_name} ·「{g.name || "未开张"}」</span><button className="btn ghost" onClick={() => post({ op: "sign_off", id: g.id })}>下架</button></div></div>)}
     <h2 style={{ marginTop: 8 }}>全服流水（最近 100 笔）</h2>
     {d.rows.map((r, i) => <p key={i}><span className="t">{new Date(r.ts).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span> {r.from} → {r.to} <b>¥{r.amount.toLocaleString()}</b> · {r.memo}</p>)}
+  </>;
+}
+
+// 账号管理
+function AccountBox({ onSay, onUser, onGone }: { onSay: (t: string) => void; onUser: (u: User) => void; onGone: () => void }) {
+  type A = { email: string | null; name: string; x: boolean; hasPassword: boolean; createdAt: number; sessions: number; admin: boolean };
+  const [a, setA] = useState<A | null>(null);
+  const [name, setName] = useState(""); const [cur, setCur] = useState(""); const [next, setNext] = useState("");
+  const [del, setDel] = useState(false); const [confirm, setConfirm] = useState(""); const [pw, setPw] = useState("");
+  const load = useCallback(() => { fetch("/api/auth/account").then((r) => r.json() as Promise<any>).then((d) => { if (!d.error) { setA(d); setName(d.name); } }).catch(() => {}); }, []);
+  useEffect(load, [load]);
+  const post = async (b: Record<string, string>) => { const r = await fetch("/api/auth/account", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) }); const d = (await r.json().catch(() => ({}))) as any; onSay(d.error || d.toast); if (r.ok) load(); return r.ok ? d : null; };
+  if (!a) return <p>读取中…</p>;
+  return <>
+    <h2>账号</h2>
+    <p>{a.email ? `📧 ${a.email}` : "𝕏 用 X 账号登录"}{a.admin ? " · 🛠️ 管理员" : ""}</p>
+    <p className="sub">{`注册于 ${new Date(a.createdAt).toLocaleDateString()} · 登录中的设备 ${a.sessions} 台`}</p>
+    <h2 style={{ marginTop: 8 }}>昵称</h2>
+    <p className="sub">显示在你的地、店、游船广告和员工名单上。</p>
+    <div className="row2"><input id="acc-name" value={name} maxLength={16} onChange={(e) => setName(e.target.value)} /><button className="btn primary" disabled={!name.trim() || name === a.name} onClick={async () => { const d = await post({ op: "name", name }); if (d?.user) onUser(d.user); }}>保存</button></div>
+    <h2 style={{ marginTop: 8 }}>{a.hasPassword ? "修改密码" : "设置密码"}</h2>
+    {a.hasPassword && <input id="acc-cur" type="password" autoComplete="current-password" placeholder="当前密码" value={cur} onChange={(e) => setCur(e.target.value)} />}
+    <input id="acc-next" type="password" autoComplete="new-password" placeholder="新密码（至少 8 位）" value={next} onChange={(e) => setNext(e.target.value)} />
+    <button className="btn primary" disabled={next.length < 8 || (a.hasPassword && !cur)} onClick={async () => { if (await post({ op: "password", current: cur, next })) { setCur(""); setNext(""); } }}>保存新密码</button>
+    <p className="sub">改完密码，其他设备会自动下线。</p>
+    <h2 style={{ marginTop: 8 }}>登录</h2>
+    <div className="row2">
+      <button className="btn ghost" disabled={a.sessions < 2} onClick={() => post({ op: "logout_all" })}>让其他设备下线</button>
+      <button className="btn ghost" onClick={async () => { await fetch("/api/auth/logout", { method: "POST" }); onGone(); }}>退出登录</button>
+    </div>
+    <h2 style={{ marginTop: 8, color: "var(--red)" }}>注销账号</h2>
+    {!del ? <button className="link" onClick={() => setDel(true)}>我要注销账号</button> : <>
+      <p className="sub">注销后存档、钱、名下的地和店都会删除，租的游船广告立即撤下且不退款，无法恢复。</p>
+      <input id="acc-confirm" placeholder="输入“注销”两个字" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+      {a.hasPassword && <input id="acc-pw" type="password" autoComplete="current-password" placeholder="密码" value={pw} onChange={(e) => setPw(e.target.value)} />}
+      <div className="row2"><button className="btn ghost" onClick={() => setDel(false)}>算了</button><button className="btn primary" style={{ background: "var(--red)" }} disabled={confirm.trim() !== "注销" || (a.hasPassword && !pw)} onClick={async () => { if (await post({ op: "delete", confirm, password: pw })) onGone(); }}>永久注销</button></div>
+    </>}
   </>;
 }

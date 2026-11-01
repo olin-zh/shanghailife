@@ -140,3 +140,35 @@ a.xbtn{display:block;text-align:center;text-decoration:none;opacity:1}
 .bottom .fold{font-size:12px;color:var(--muted);margin-left:2px}
 .bottom .mini{display:flex;gap:12px;font-size:12px;color:var(--muted)}
 .bottom .mini .low{color:var(--red);font-weight:700}
+
+/* 右上角状态卡（竖排） */
+.hud{position:fixed;top:calc(100px + env(safe-area-inset-top,0px));right:calc(12px + env(safe-area-inset-right,0px));width:220px;background:var(--card);border-radius:18px;padding:12px 14px;box-shadow:0 6px 24px rgba(20,40,30,.2);display:grid;gap:8px;font-size:13px;z-index:2;max-height:calc(100vh - 130px);overflow:auto}
+.hud.folded{cursor:pointer}
+.hud .who{display:grid;gap:2px;cursor:pointer;user-select:none}
+.hud .who .job{font-size:12px;color:var(--muted)}
+.hud .who .money{font-size:20px;font-weight:700}
+.hud .fold{font-size:11px;color:var(--muted);font-weight:400}
+.hud .mini{display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;font-size:12px;color:var(--muted)}
+.hud .mini .low{color:var(--red);font-weight:700}
+.hud .stats{grid-template-columns:1fr !important}
+.hud .career{display:grid;gap:4px}
+.hud .last{font-size:12px}
+.sheet{top:calc(100px + var(--hud-h,0px) + env(safe-area-inset-top,0px));max-height:calc(100vh - 130px - var(--hud-h,0px))}
+.hud input{width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:10px;font:inherit}
+.panel input{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:10px;font:inherit;box-sizing:border-box}
+@media (max-width:640px){
+  .hud{top:calc(130px + env(safe-area-inset-top,0px));width:170px;padding:10px 12px}
+  .hud .who .money{font-size:17px}
+  .sheet{top:auto;max-height:42vh}
+}
+
+.hud{top:calc(var(--chips-b,92px) + 10px)}
+.hud .career{grid-template-columns:auto 1fr}
+.hud .career .sub{grid-column:1/-1}
+.sheet{top:calc(var(--chips-b,92px) + 10px + var(--hud-h,0px));max-height:calc(100vh - var(--chips-b,92px) - 30px - var(--hud-h,0px))}
+@media (max-width:640px){
+  .hud{top:calc(var(--chips-b,92px) + 8px)}
+  .sheet{top:auto;bottom:calc(12px + env(safe-area-inset-bottom,0px));max-height:45vh}
+}
+
+.sheet{z-index:4}
