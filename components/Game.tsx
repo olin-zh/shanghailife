@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createCity, type City, type Other } from "../lib/city";
 import { plotName, type Plot } from "../lib/plots";
 import { AD_DAYS, AD_PRICE, BOAT_COUNT, boatName, type Boat } from "../lib/boats";
+import { DEPOSIT, KINDS, SLOTS, npcPerHour, slotAt, type Shop, type ShopKind } from "../lib/shops";
 import { actsAt, homeOf, isHome, HOMES, GIGS, gigHint, jobTitle, lvOf, nextLvXp, LV_XP, weeklyCost, GIFT_AMOUNTS, JOBS, NPCS, PLACES, act, clock, coopable, isState, mood, newGame, travel, trip, type JobId, type PlaceId, type State } from "../lib/game";
 
 type User = { id: string; email: string; name: string };
@@ -27,6 +28,8 @@ export default function Game() {
   const [xOn, setXOn] = useState(false);
   const [plots, setPlots] = useState<Plot[]>([]);
   const [boats, setBoats] = useState<Boat[]>([]);
+  const [shops, setShops] = useState<Shop[]>([]);
+  const loadShops = useCallback(() => { fetch("/api/shops").then((r) => r.json() as Promise<any>).then((d) => { if (Array.isArray(d.shops)) setShops(d.shops); }).catch(() => {}); }, []);
   const [isAdmin, setIsAdmin] = useState(false);
   const [boatSel, setBoatSel] = useState<number | null>(null);
   const loadBoats = useCallback(() => { fetch("/api/boats").then((r) => r.json() as Promise<any>).then((d) => { if (Array.isArray(d.boats)) { setBoats(d.boats); setIsAdmin(!!d.admin); } }).catch(() => {}); }, []);
@@ -84,6 +87,17 @@ export default function Game() {
   useEffect(() => { city.current?.setPlots(plots); }, [plots]);
   useEffect(() => { loadBoats(); const h = setInterval(loadBoats, 30000); return () => clearInterval(h); }, [loadBoats, user]);
   useEffect(() => { city.current?.setBoats(boats); }, [boats]);
+  useEffect(() => { loadShops(); const h = setInterval(loadShops, 20000); return () => clearInterval(h); }, [loadShops, user]);
+  useEffect(() => { city.current?.setShops(shops); }, [shops]);
+  const shopOp = async (id: number, body: Record<string, unknown>) => {
+    setBusy(true);
+    const r = await fetch(`/api/shops/${id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
+    const d = r ? ((await r.json().catch(() => ({}))) as any) : { error: "网络出错了" };
+    setBusy(false);
+    if ("state" in d && d.state !== undefined) setS(isState(d.state) ? d.state : null);
+    if (d.error) say(d.error); else if (d.toast) say(d.toast);
+    loadShops(); return r?.ok;
+  };
   // 分享链接 …/#boat-12 直接打开那艘船的广告
   useEffect(() => {
     const open = () => { const m = location.hash.match(/^#boat-(\d+)$/); if (m) setBoatSel(Math.max(0, Math.min(BOAT_COUNT - 1, Number(m[1]) - 1))); };
@@ -203,6 +217,7 @@ export default function Game() {
           {isHome(sel) && <p className="sub">{HOMES[sel].note}{HOMES[sel].perk.energy ? `；在这里睡觉额外精力+${HOMES[sel].perk.energy}` : ""}</p>}
           <p>{PLACES[sel].desc}</p>
           {here.length > 0 && <p className="sub">这里还有：{here.map((o) => o.name).join("、")}</p>}
+          {slotAt(sel) >= 0 && shops[slotAt(sel)] && <ShopBox shop={shops[slotAt(sel)]} here={!!s && s.at === sel} user={user} money={s?.money ?? 0} busy={busy} onOp={(b) => shopOp(slotAt(sel), b)} onLogin={() => setPanel("auth")} />}
           {sel === "sjxc" && (
             <div className="plots">
               <p className="sub">在售 {plots.filter((p) => !p.ownerName).length} / {plots.length} 块。买下就能住，不用交房租；每人限购一块，转卖回收九成。</p>
@@ -418,6 +433,52 @@ function BoatView({ boat, user, hasGame, money, admin, onClose, onDone, onLogin 
           <p className="sub">请勿上传色情、暴力、侵权或违法内容；被 3 位玩家举报会自动隐藏。</p>
           <button className="big" disabled={busy || (!live && money < AD_PRICE)} onClick={upload}>{busy ? "上传中…" : live ? "换上这张图" : money < AD_PRICE ? `钞票不够（要¥${AD_PRICE.toLocaleString()}）` : `付¥${AD_PRICE.toLocaleString()} 挂上去`}</button>
         </>}
+      </div>
+    </div>
+  );
+}
+
+function ShopBox({ shop, here, user, money, busy, onOp, onLogin }: { shop: Shop; here: boolean; user: User | null | undefined; money: number; busy: boolean; onOp: (b: Record<string, unknown>) => Promise<boolean | undefined>; onLogin: () => void }) {
+  const [kind, setKind] = useState<ShopKind>("cafe");
+  const [name, setName] = useState("");
+  const [price, setPrice] = useState(KINDS.cafe.ref);
+  const [ask, setAsk] = useState(false);
+  const slot = SLOTS[shop.id];
+  useEffect(() => { if (shop.price) setPrice(shop.price); }, [shop.price]);
+  if (!shop.ownerName) {
+    const est = npcPerHour(shop.id, kind, price || 1);
+    return (
+      <div className="shop">
+        <b>🏪 空铺面 · 铺租¥{slot.rent}/天（真实时间）</b>
+        <p className="sub">开一家店，押金¥{DEPOSIT.toLocaleString()}。开着时按真实时间自动有客人；其他玩家进店消费的钱也进侬的账。要到店里才能收账。每人只能开一家。</p>
+        {!user ? <button className="btn primary" onClick={onLogin}>登录后开店</button> : <>
+          <div className="kinds">{(Object.keys(KINDS) as ShopKind[]).map((k) => <button key={k} aria-pressed={k === kind} onClick={() => { setKind(k); setPrice(KINDS[k].ref); }}>{KINDS[k].ic} {KINDS[k].name}</button>)}</div>
+          <input id="shop-name" value={name} maxLength={12} onChange={(e) => setName(e.target.value)} placeholder="店名，比如：阿明生煎" />
+          <label className="pricerow">售价 ¥<input id="shop-price" type="number" min={1} value={price} onChange={(e) => setPrice(Math.round(Number(e.target.value)))} /><span className="sub">参考价¥{KINDS[kind].ref} · 预计每天净赚约¥{Math.round(est.profit * 24 - slot.rent)}</span></label>
+          <button className="btn primary" disabled={busy || !here || money < DEPOSIT || !name.trim()} onClick={() => onOp({ op: "open", kind, name, price })}>{!here ? "先坐到这里才能开店" : money < DEPOSIT ? `押金不够（要¥${DEPOSIT.toLocaleString()}）` : `付押金开张`}</button>
+        </>}
+      </div>
+    );
+  }
+  const k = KINDS[shop.kind!];
+  if (!shop.mine) return (
+    <div className="shop">
+      <b>{k.ic} 「{shop.name}」· {shop.ownerName}开的{k.name}</b>
+      <button className="act" disabled={busy || !here || !user || money < (shop.price || 0)} onClick={() => onOp({ op: "buy" })}>
+        <span>进店消费{!user ? "（要登录）" : !here ? "（先坐过来）" : ""}</span><small>¥{shop.price} · {Object.entries(k.eff).map(([a, v]) => `${({ energy: "精力", hunger: "肚皮", fun: "开心", social: "社交" } as Record<string, string>)[a]}${v! > 0 ? "+" : ""}${v}`).join(" ")}</small>
+      </button>
+    </div>
+  );
+  const est = npcPerHour(shop.id, shop.kind!, price || 1);
+  return (
+    <div className="shop mine">
+      <b>{k.ic} 我的店「{shop.name}」</b>
+      <p className="sub">账上 <b style={{ color: (shop.till ?? 0) < 0 ? "var(--red)" : "var(--green)" }}>¥{(shop.till ?? 0).toLocaleString()}</b> · 玩家光顾 {shop.sold} 次 · 散客约 {shop.npc} 人 · 铺租¥{slot.rent}/天</p>
+      <label className="pricerow">售价 ¥<input id="shop-price-edit" type="number" min={1} value={price} onChange={(e) => setPrice(Math.round(Number(e.target.value)))} /><button className="btn ghost" disabled={busy || price === shop.price} onClick={() => onOp({ op: "price", price })}>改价</button><span className="sub">按这个价每天约净赚¥{Math.round(est.profit * 24 - slot.rent)}</span></label>
+      <div className="row2">
+        <button className="btn primary" disabled={busy || !here} onClick={() => onOp({ op: "collect" })}>{here ? "收账" : "到店才能收账"}</button>
+        {ask ? <><span className="sub">关店退一半押金，确定？</span><button className="btn ghost" onClick={() => setAsk(false)}>算了</button><button className="btn ghost" disabled={busy || !here} onClick={async () => { setAsk(false); await onOp({ op: "close" }); }}>关店</button></>
+          : <button className="link" onClick={() => setAsk(true)}>关店</button>}
       </div>
     </div>
   );

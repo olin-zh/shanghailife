@@ -4,6 +4,7 @@ import { PLACES, type PlaceId } from "./game";
 import { PLOT_COUNT, SUBURB, plotName, plotPos, type Plot } from "./plots";
 import { geo, HUANGPU, SUZHOU_CREEK } from "./geo";
 import { BOAT_COUNT, HUANGPU_BOATS, type Boat } from "./boats";
+import { KINDS, SLOTS, type Shop } from "./shops";
 
 export type Other = { id: string; name: string; at: PlaceId; color: number; act?: string };
 export type City = {
@@ -12,6 +13,7 @@ export type City = {
   setMine(id: PlaceId | null): void;
   setPlots(list: Plot[]): void;
   setBoats(list: Boat[]): void;
+  setShops(list: Shop[]): void;
   setPlayers(list: Other[]): void;
   bubble(id: string, text: string): void;
   focus(id: PlaceId): void;
@@ -468,6 +470,13 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
     if (hit) onPickBoat(hit.object.userData.boatId as number);
   };
 
+  /* ---- 玩家开的店：每个铺面一个位置，开了店才盖小店面 ---- */
+  const shopViews = SLOTS.map((sl) => {
+    const p = PLACES[sl.place]; const x = p.x - 5, z = p.z - 3;
+    const tag = document.createElement("button"); tag.className = "shoptag"; tag.hidden = true; tag.onclick = (e) => { e.stopPropagation(); onPick(sl.place); }; overlay.appendChild(tag);
+    return { x, z, tag, obj: null as THREE.Group | null, key: "" };
+  });
+
   /* ---- 拖动和缩放 ---- */
   let drag: { x: number; y: number; t: THREE.Vector3 } | null = null;
   let downAt: { x: number; y: number } | null = null;
@@ -520,6 +529,7 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
     renderer.render(scene, cam);
     labels.forEach((el) => project(el, +el.dataset.x!, 0.2, +el.dataset.z!, "-50%,-50%"));
     (Object.keys(pins) as PlaceId[]).forEach((k) => project(pins[k], PLACES[k].x, PLACES[k].h, PLACES[k].z));
+    shopViews.forEach((v) => { if (!v.tag.hidden) project(v.tag, v.x, 3.2, v.z); });
     lots.forEach((L, id) => { const { x, z } = plotPos(id); project(L.tag, x, L.house ? 4.2 : 1.8, z); });
     raf = requestAnimationFrame(frame);
   };
@@ -527,6 +537,20 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
 
   return {
     setSelected(id) { (Object.keys(pins) as PlaceId[]).forEach((k) => pins[k].classList.toggle("sel", k === id)); },
+    setShops(list) {
+      list.forEach((sh) => {
+        const k = sh.ownerName ? `${sh.kind}|${sh.name}|${sh.ownerName}` : "";
+        const st = shopViews[sh.id]; if (!st || st.key === k) return;
+        st.key = k; if (st.obj) { scene.remove(st.obj); st.obj = null; }
+        st.tag.hidden = !k;
+        if (!k) return;
+        const kd = KINDS[sh.kind!]; const g = new THREE.Group();
+        box(2.4, 1.8, 2, mats.white, 0, 0, 0, g); box(2.8, 0.2, 2.6, M(kd.color), 0, 1.8, 0.3, g); box(2.6, 0.45, 0.12, M(kd.color), 0, 1.35, 1.35, g);
+        box(0.8, 1.1, 0.06, mats.glass, -0.5, 0, 1.02, g); box(0.5, 1.2, 0.06, M(0x6b4a33), 0.6, 0, 1.02, g);
+        g.position.set(st.x, 0.1, st.z); scene.add(g); st.obj = g;
+        st.tag.textContent = `${kd.ic} ${sh.name}`;
+      });
+    },
     setBoats(list) {
       list.forEach((b) => {
         const B = boats[b.id]; if (!B || B.ver === b.version) return;
