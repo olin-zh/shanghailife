@@ -7,7 +7,7 @@ type Out = { toast?: string; label?: string; error?: string };
 
 // 导入游客存档：只保留进度类信息，钱和日子重置，避免把本地改过的数据带进来
 function sanitize(x: State): State {
-  const s = newGame(String(x.name).slice(0, 12) || "小张", JOBS[x.job] ? x.job : "coder");
+  const s = newGame(String(x.name).slice(0, 12) || "小张", JOBS[x.job] && x.job !== "engineer" ? x.job : "coder");
   s.friends = Object.fromEntries(
     Object.entries(x.friends || {}).filter(([k]) => k.length < 10).map(([k, v]) => [k, Math.max(0, Math.min(100, Number(v) || 0))]),
   );
@@ -32,7 +32,7 @@ export async function POST(req: Request) {
     switch (b.op) {
       case "new": {
         if (s) return { state: s, out: { error: "已经有存档了" } };
-        const job = (JOBS[b.job as JobId] ? b.job : "coder") as JobId;
+        const job = (JOBS[b.job as JobId] && b.job !== "engineer" ? b.job : "coder") as JobId;
         return { state: newGame(String(b.name || "").trim().slice(0, 12) || user.name, job), out: {} };
       }
       case "import":

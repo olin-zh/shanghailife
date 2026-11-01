@@ -3,13 +3,13 @@
 import nextHandler from "./.open-next/worker.js";
 import { DurableObject } from "cloudflare:workers";
 import { mutate, loadSave } from "./lib/store";
-import { coop, receiveGift, sendGift, ACTS, type PlaceId, type State } from "./lib/game";
+import { coop, receiveGift, sendGift, actsAt, isHome, PLACES as ALL, type PlaceId, type State } from "./lib/game";
 
 type Env = { DB: D1Database; CITY: DurableObjectNamespace<CityRoom>; ASSETS: Fetcher };
 type Player = { id: string; name: string; at: string; act?: string; color: number };
 
 const GIFT_AMOUNTS = [8, 18, 88, 188];
-const PLACES = new Set(["home", "rmgy", "metro", "bund", "chp", "tzf", "wk", "ykl", "ljz", "ferry"]);
+const PLACES = new Set(Object.keys(ALL));
 
 function cookie(h: string | null, name: string) {
   if (!h) return null;
@@ -127,7 +127,7 @@ export class CityRoom extends DurableObject<Env> {
       } else {
         // 两边都先检查一遍，再分别记账
         const [a, b] = await Promise.all([loadSave(this.env.DB, o.from), loadSave(this.env.DB, o.to)]);
-        const okFor = (s: State | null) => !!s && s.at === o.at && !!ACTS[s.at as PlaceId][o.i!] && ACTS[s.at as PlaceId][o.i!][4] !== "work" && s.money >= ACTS[s.at as PlaceId][o.i!][2];
+        const okFor = (s: State | null) => { if (!s || s.at !== o.at) return false; const a = actsAt(s, s.at as PlaceId)[o.i!]; return !!a && !a[4] && !isHome(s.at as PlaceId) && (a[2] === 0 || s.money >= a[2]); };
         if (!okFor(a.state) || !okFor(b.state)) { this.sendTo(o.from, { t: "notice", text: "没法一起做：有人钱不够或已经离开" }); this.sendTo(o.to, { t: "notice", text: "没法一起做：有人钱不够或已经离开" }); return; }
         for (const [uid, pid, pname] of [[o.from, o.to, o.toName], [o.to, o.from, o.fromName]] as const) {
           let toast: string | undefined;

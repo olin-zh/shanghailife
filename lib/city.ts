@@ -6,6 +6,7 @@ export type Other = { id: string; name: string; at: PlaceId; color: number; act?
 export type City = {
   setSelected(id: PlaceId | null): void;
   setHere(id: PlaceId | null): void;
+  setMine(id: PlaceId | null): void;
   setPlayers(list: Other[]): void;
   bubble(id: string, text: string): void;
   focus(id: PlaceId): void;
@@ -42,8 +43,8 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
 
   scene.add(new THREE.HemisphereLight(0xffffff, 0x8aa070, 0.75 * Math.PI));
   const sun = new THREE.DirectionalLight(0xffffff, 0.75 * Math.PI);
-  sun.position.set(-40, 80, 30); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
-  Object.assign(sun.shadow.camera, { left: -90, right: 90, top: 90, bottom: -90, far: 300 });
+  sun.position.set(-40, 80, 30); sun.castShadow = true; sun.shadow.mapSize.set(4096, 4096);
+  Object.assign(sun.shadow.camera, { left: -150, right: 150, top: 150, bottom: -150, far: 400 });
   scene.add(sun);
 
   const M = (c: number) => new THREE.MeshLambertMaterial({ color: c });
@@ -94,6 +95,46 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
   road(14, 4, 60, 4); road(14, -12, 22, -20, 1.4); road(30, -20, 30, 30); road(14, 18, 60, 18);
   const bridge = (z: number) => { box(12, 0.4, 1.8, mats.white, 7, 1.6, z); cyl(0.25, 0.25, 6, mats.white, 4, 0, z); cyl(0.25, 0.25, 6, mats.white, 10, 0, z); };
   bridge(30); bridge(46);
+  // 外围道路：通往虹桥、五角场、徐家汇、浦东各处
+  road(-125, 6, -75, 6); road(-100, -12, -75, -12); road(-100, 22, -75, 22); road(-36, -70, -36, -30); road(-56, -70, -56, -30); road(-56, 50, -56, 60); road(-90, -20, -90, 50);
+  road(-60, -40, 2, -40); road(60, 4, 110, 4); road(14, 18, 110, 18); road(30, 30, 30, 62); road(14, 46, 60, 46); road(70, -24, 70, 40);
+
+  /* ---- 新地标 ---- */
+  // 南京路步行街：一排霓虹店招
+  for (let i = 0; i < 5; i++) { const x = -14 + i * 2.6; box(2.2, 3 + (i % 2), 2.2, i % 2 ? mats.white : mats.stone, x, 0, -7.6); box(2.3, 0.6, 0.15, [mats.red, mats.yellow, mats.pink][i % 3], x, 2.2, -6.45); }
+  plot(-9, -4.2, 13, 1.6, mats.stone);
+  // 静安寺：金顶
+  { const x = -64, z = -7; plot(x, z, 9, 8, mats.stone); box(5, 2.2, 4, mats.yellow, x, 0, z - 1); box(5.6, 0.4, 4.6, mats.gold, x, 2.2, z - 1); cyl(0, 1.6, 2.2, mats.gold, x, 2.6, z - 1, 4); cyl(0.12, 0.12, 2, mats.gold, x, 4.8, z - 1, 6);
+    [[-3, 2], [3, 2]].forEach(([dx, dz]) => { box(1, 3, 1, mats.yellow, x + dx, 0, z + dz); cyl(0, 0.8, 1.2, mats.gold, x + dx, 3, z + dz, 4); });
+    box(3, 9, 3, mats.glass, x + 7, 0, z - 3); box(3, 7, 3, mats.white, x - 7, 0, z - 4); }
+  // 新天地：低矮石库门 + 阳伞
+  { const x = -14, z = 36; plot(x, z, 12, 8, mats.stone); for (let i = 0; i < 4; i++) { box(2.6, 2.2, 2.4, i % 2 ? mats.brick : mats.grey, x - 4.5 + i * 3, 0, z - 2); box(2.8, 0.4, 2.6, mats.roofTile, x - 4.5 + i * 3, 2.2, z - 2); }
+    for (let i = 0; i < 4; i++) { cyl(0.05, 0.05, 1.4, mats.dk, x - 4 + i * 2.6, 0, z + 1.6, 6); cyl(0, 0.9, 0.4, [mats.red, mats.white][i % 2], x - 4 + i * 2.6, 1.3, z + 1.6, 8); } }
+  // 徐家汇天主教堂：红砖双尖塔
+  { const x = -76, z = 34; plot(x, z, 10, 10, mats.park); box(3.4, 4, 7, mats.brick, x, 0, z); cyl(0, 2.2, 1.6, mats.roofTile, x, 4, z, 4).scale.set(1, 1, 2.2);
+    [[-1.1], [1.1]].forEach(([dx]) => { box(1.2, 7, 1.2, mats.brick, x + dx, 0, z - 3.6); cyl(0, 0.85, 3.4, mats.dk, x + dx, 7, z - 3.6, 4); });
+    box(6, 6, 6, mats.glass2, x + 9, 0, z - 4); }
+  // 虹桥火车站：长条站房 + 高铁
+  { const x = -118, z = 6; plot(x, z, 16, 12, mats.grey); box(14, 3, 7, mats.white, x, 0, z - 1.5); box(14.6, 0.5, 7.6, mats.glass2, x, 3, z - 1.5);
+    const hsr = new THREE.Group(); for (let i = 0; i < 5; i++) box(2.6, 0.9, 1, mats.white, i * 2.7, 0, 0, hsr); box(13.5, 0.12, 1.02, mats.glass2, 5.4, 0.45, 0, hsr); hsr.position.set(x - 7, 0.1, z + 4.2); scene.add(hsr); }
+  // 五角场：彩蛋 + 大学楼
+  { const x = -30, z = -58; plot(x, z, 12, 12, mats.grey); sphere(2.2, mats.yellow, x, 4.2, z).scale.set(1.3, 0.8, 1.3); [[-1.6, -1.6], [1.6, -1.6], [-1.6, 1.6], [1.6, 1.6]].forEach(([dx, dz]) => cyl(0.15, 0.15, 3.6, mats.white, x + dx, 0, z + dz, 6));
+    box(4, 6, 3, mats.brick, x - 8, 0, z + 3); box(4, 5, 3, mats.brick, x - 8, 0, z - 2); box(5, 4, 4, mats.white, x + 8, 0, z); for (let i = 0; i < 6; i++) tree(x - 11 + i * 1.6, z + 7, 0.9); }
+  // 世博中国馆：红色倒斗拱
+  { const x = 28, z = 52; plot(x, z, 12, 12, mats.grey); box(2.4, 4, 2.4, mats.red, x, 0, z); [5, 6, 7, 8, 9].forEach((w, i) => box(w, 1.2, w, mats.red, x, 4 + i * 1.2, z)); box(10, 1.2, 10, mats.red, x, 10, z); }
+  // 世纪公园：大草坪 + 湖
+  { const x = 66, z = -6; plot(x, z, 22, 16, mats.park); const lake = new THREE.Mesh(new THREE.CylinderGeometry(4, 4, 0.1, 24), mats.water); lake.position.set(x + 4, 0.15, z - 2); lake.scale.set(1.4, 1, 1); scene.add(lake);
+    for (let i = 0; i < 22; i++) tree(x - 10 + rand() * 20, z - 7 + rand() * 14, 1); }
+  // 张江：科技园 + 张江之尚
+  { const x = 96, z = 24; plot(x, z, 16, 14, mats.grey); box(3, 14, 3, mats.glass, x, 0, z - 3); box(4, 6, 6, mats.white, x - 6, 0, z + 2); box(4, 8, 4, mats.glass2, x + 6, 0, z + 1); box(6, 3, 3, mats.white, x, 0, z + 4); for (let i = 0; i < 6; i++) tree(x - 8 + i * 3, z + 7.5, 0.9); }
+  // 杨浦老公房：六层灰楼
+  { const x = -44, z = -50; plot(x, z, 12, 10, mats.stone); [[-3.5, -2], [3.5, -2], [0, 3]].forEach(([dx, dz]) => { box(5.5, 5, 3, mats.grey, x + dx, 0, z + dz); box(5.7, 0.3, 3.2, mats.brick, x + dx, 5, z + dz); }); }
+  // 陆家嘴江景公寓：两栋高层
+  { const x = 44, z = -24; plot(x, z, 10, 8, mats.grey); box(3, 16, 3, mats.glass, x - 2, 0, z); box(3, 13, 3, mats.white, x + 2.5, 0, z - 1); }
+  // 徐汇老洋房：坡屋顶 + 花园
+  { const x = -60, z = 24; plot(x, z, 10, 9, mats.park); box(4.4, 3, 3.6, mats.white, x, 0, z - 1.5); cyl(0, 3.2, 1.8, mats.red, x, 3, z - 1.5, 4); box(0.6, 1.4, 0.6, mats.brick, x + 1.2, 3.6, z - 1.5);
+    for (let i = 0; i < 6; i++) tree(x - 4 + i * 1.6, z + 3.5, 0.8); }
+
 
   // 东方明珠
   { const x = 15, z = -10; plot(x, z, 6, 6, mats.grey);
@@ -140,21 +181,23 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
   const train = new THREE.Group(); for (let i = 0; i < 4; i++) box(2.6, 0.9, 1, mats.white, i * 2.8, 0, 0, train); box(11, 0.08, 1.02, mats.red, 4.2, 0.55, 0, train); train.position.set(-70, 0.1, -12.6); scene.add(train);
 
   const free = (x: number, z: number) => {
-    for (const k in PLACES) { const p = PLACES[k as PlaceId]; if (Math.hypot(p.x - x, p.z - z) < 7) return false; }
+    for (const k in PLACES) { const p = PLACES[k as PlaceId]; if (Math.hypot(p.x - x, p.z - z) < 9) return false; }
+    if (x > 12 && z < -22 && z > -0.2 * x - 32 && z < -0.2 * x - 22) return false; // 黄浦江向东拐的那段
+    if (Math.abs(z - 6) < 1.5 && x < -75) return false;
     if (x > -1 && x < 15 && z > -30) return false;
     if (Math.abs(z) < 1.5 || Math.abs(z + 12) < 1.5 || Math.abs(z - 22) < 1.5) return false;
     if (Math.abs(z + 18) < 2.5 && x < 8) return false;
     return true;
   };
-  for (let i = 0; i < 70; i++) { const x = rnd(-72, -2), z = rnd(-34, 48); if (free(x, z)) box(rnd(1.8, 3), rnd(1.5, 6), rnd(1.8, 3), rand() < 0.3 ? mats.white : mats.grey, x, 0, z); }
-  for (let i = 0; i < 40; i++) { const x = rnd(16, 66), z = rnd(-34, 40); if (free(x, z) && Math.hypot(x - 26, z + 2) >= 12) box(rnd(2, 3), rnd(3, 12), rnd(2, 3), rand() < 0.5 ? mats.glass : mats.white, x, 0, z); }
-  for (let i = 0; i < 80; i++) { const x = rnd(-74, 66), z = rnd(-36, 50); if (free(x, z) && !(x > -1 && x < 16)) tree(x, z, rnd(0.6, 1)); }
+  for (let i = 0; i < 220; i++) { const x = rnd(-128, -2), z = rnd(-70, 62); if (free(x, z)) box(rnd(1.8, 3), rnd(1.5, 6), rnd(1.8, 3), rand() < 0.3 ? mats.white : mats.grey, x, 0, z); }
+  for (let i = 0; i < 110; i++) { const x = rnd(16, 110), z = rnd(-30, 62); if (free(x, z) && Math.hypot(x - 26, z + 2) >= 12) box(rnd(2, 3), rnd(3, 12), rnd(2, 3), rand() < 0.5 ? mats.glass : mats.white, x, 0, z); }
+  for (let i = 0; i < 200; i++) { const x = rnd(-128, 110), z = rnd(-70, 62); if (free(x, z) && !(x > -1 && x < 16)) tree(x, z, rnd(0.6, 1)); }
   const cars: THREE.Mesh[] = [];
   for (let i = 0; i < 10; i++) { const c = box(1.2, 0.6, 0.7, [mats.red, mats.yellow, mats.white, mats.glass2][i % 4], 0, 0.08, 0); c.userData = { lane: [0, 22, -12][i % 3], sp: rnd(0.08, 0.18) * (i % 2 ? 1 : -1), x: rnd(-70, 0) }; cars.push(c); }
 
   /* ---- 覆盖层 ---- */
   const labels: HTMLElement[] = [];
-  ([["黄浦江", 8, 22, ""], ["浦 西", -40, -26, "land"], ["浦 东", 46, 26, "land"], ["苏州河", -50, -18, ""]] as const).forEach(([t, x, z, c]) => {
+  ([["黄浦江", 8, 22, ""], ["浦 西", -40, -26, "land"], ["浦 东", 46, 26, "land"], ["苏州河", -50, -18, ""], ["静 安", -78, -14, "land"], ["徐 汇", -90, 44, "land"], ["杨 浦", -12, -62, "land"], ["闵 行", -116, 20, "land"], ["张 江", 100, 40, "land"]] as const).forEach(([t, x, z, c]) => {
     const d = document.createElement("div"); d.className = "lbl " + c; d.textContent = t; d.dataset.x = String(x); d.dataset.z = String(z); overlay.appendChild(d); labels.push(d);
   });
   const pins = {} as Record<PlaceId, HTMLButtonElement>;
@@ -192,7 +235,8 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
     return { g, limbs: [legL, legR, armL, armR] };
   };
   // 每个地点前面一块空地，人排成两行站
-  const SPOTS: Record<PlaceId, [number, number]> = { home: [-22, 19.6], rmgy: [-28, -7], metro: [-18, -9.6], bund: [4.6, -9], chp: [-9, 21], tzf: [-30, 26.1], wk: [-47, 13], ykl: [-42, 32.2], ljz: [19, 4], ferry: [4.5, 8.2] };
+  const SPOTS: Record<PlaceId, [number, number]> = { home: [-22, 19.6], rmgy: [-28, -7], metro: [-18, -9.6], bund: [4.6, -9], chp: [-9, 21], tzf: [-30, 26.1], wk: [-47, 13], ykl: [-42, 32.2], ljz: [19, 4], ferry: [4.5, 8.2],
+    njl: [-9, -4.2], jas: [-64, -1.5], xtd: [-14, 39], xjh: [-72, 39], hq: [-118, 12.5], wjc: [-28, -51.5], expo: [28, 46], sjgy: [62, 3], zj: [94, 30], gongfang: [-44, -44.5], jiangjing: [44, -19.5], yangfang: [-60, 28.5] };
   const slotPos = (at: PlaceId, slot: number) => { const [x, z] = SPOTS[at]; const col = slot % 6, row = Math.floor(slot / 6) % 2; return new THREE.Vector3(x + (col - 2.5) * 1.3 + row * 0.6, 0, z + row * 1.2); };
   const makeFig = (o: Other, slot: number): Fig => {
     const { g, limbs } = person(o.id, o.color); scene.add(g);
@@ -210,7 +254,7 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
   canvas.addEventListener("pointermove", (e) => {
     if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y; const s = (cam.right - cam.left) / root.clientWidth;
     target.copy(drag.t).addScaledVector(new THREE.Vector3(1, 0, -1).normalize(), -dx * s).addScaledVector(new THREE.Vector3(1, 0, 1).normalize(), -dy * s * 1.35);
-    target.x = Math.max(-75, Math.min(65, target.x)); target.z = Math.max(-40, Math.min(50, target.z)); placeCam();
+    target.x = Math.max(-125, Math.min(105, target.x)); target.z = Math.max(-66, Math.min(60, target.z)); placeCam();
   });
   canvas.addEventListener("pointerup", () => (drag = null));
   const setZoom = (z: number) => { zoom = Math.max(0.6, Math.min(3, z)); resize(); };
@@ -257,6 +301,7 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
 
   return {
     setSelected(id) { (Object.keys(pins) as PlaceId[]).forEach((k) => pins[k].classList.toggle("sel", k === id)); },
+    setMine(id) { (Object.keys(pins) as PlaceId[]).forEach((k) => pins[k].classList.toggle("mine", k === id)); },
     setHere(id) { (Object.keys(pins) as PlaceId[]).forEach((k) => pins[k].classList.toggle("here", k === id)); },
     setPlayers(list) {
       const keep = new Set(list.map((o) => o.id));

@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createCity, type City, type Other } from "../lib/city";
-import { ACTS, GIFT_AMOUNTS, JOBS, NPCS, PLACES, act, clock, coopable, isState, mood, newGame, travel, trip, type JobId, type PlaceId, type State } from "../lib/game";
+import { actsAt, homeOf, isHome, HOMES, GIFT_AMOUNTS, JOBS, NPCS, PLACES, act, clock, coopable, isState, mood, newGame, travel, trip, type JobId, type PlaceId, type State } from "../lib/game";
 
 type User = { id: string; email: string; name: string };
 type Chat = { id: string; name: string; at: PlaceId; text: string; ts: number };
@@ -116,6 +116,7 @@ export default function Game() {
     if (s) list.push({ id: "me", name: s.name, at: s.at, color: 0xc4472f });
     city.current?.setPlayers(list);
     city.current?.setHere(s?.at ?? null);
+    city.current?.setMine(s ? homeOf(s) : null);
   }, [others, s]);
   useEffect(() => { city.current?.setSelected(sel); }, [sel]);
 
@@ -172,14 +173,15 @@ export default function Game() {
         <aside className="sheet">
           <button className="x" aria-label="关闭" onClick={() => setSel(null)}>✕</button>
           <h2>{PLACES[sel].ic} {PLACES[sel].name}</h2>
-          <p className="sub">{PLACES[sel].sub}{s?.at === sel ? " · 侬在这里" : ""}</p>
+          <p className="sub">{PLACES[sel].sub}{s?.at === sel ? " · 侬在这里" : ""}{s && isHome(sel) && homeOf(s) === sel ? " · 🔑 侬的家" : ""}</p>
+          {isHome(sel) && <p className="sub">{HOMES[sel].note}{HOMES[sel].perk.energy ? `；在这里睡觉额外精力+${HOMES[sel].perk.energy}` : ""}</p>}
           <p>{PLACES[sel].desc}</p>
           {here.length > 0 && <p className="sub">这里还有：{here.map((o) => o.name).join("、")}</p>}
           {!s ? <p className="sub">先在下面起个名字，开始游戏。</p> : s.at !== sel ? (
-            <button className="go" disabled={busy} onClick={() => go({ op: "travel", to: sel })}>🚇 坐过去 · ¥{trip(s.at, sel).cost} · {trip(s.at, sel).mins}分钟</button>
+            <button className="go" disabled={busy} onClick={() => go({ op: "travel", to: sel })}>{s.money < trip(s.at, sel).cost && sel === homeOf(s) ? `🚶 没钱坐地铁，走回家 · ${Math.round(trip(s.at, sel).mins * 3 / 60)}小时` : `🚇 坐过去 · ¥${trip(s.at, sel).cost} · ${trip(s.at, sel).mins}分钟`}</button>
           ) : (
-            <div className="acts">{ACTS[sel].map((a, i) => (
-              <button key={i} className="act" disabled={busy || s.money < a[2]} onClick={() => go({ op: "act", i })}>
+            <div className="acts">{actsAt(s, sel).map((a, i) => (
+              <button key={i} className="act" disabled={busy || (a[2] > 0 && s.money < a[2])} onClick={() => go({ op: "act", i })}>
                 <span>{a[0]}</span><small>{a[1] >= 60 ? (a[1] / 60).toFixed(a[1] % 60 ? 1 : 0) + "小时" : a[1] + "分"}{a[2] ? " · ¥" + a[2] : ""}</small>
               </button>))}</div>
           )}
@@ -190,7 +192,7 @@ export default function Game() {
         <aside className="panel">
           <button className="x" aria-label="关闭" onClick={() => setPanel(null)}>✕</button>
           {panel === "auth" && <Auth xOn={xOn} onDone={(u) => { setUser(u); setPanel(null); say(`欢迎，${u.name}`); }} />}
-          {panel === "help" && <><h2>怎么玩</h2><p>拖动地图看看上海，滚轮或右下角按钮缩放。点建筑上的图标查看能做啥，不在那里就先坐地铁过去，过江更贵。</p><p>上班赚钞票，吃饭困觉保持状态，多和人来往交朋友。每30天交一次房租¥2800。</p><p>登录后存档会存在云端，还能在地图上看到其他玩家、聊天、点名字牌向对方挥手。</p></>}
+          {panel === "help" && <><h2>怎么玩</h2><p>拖动地图看看上海，滚轮或右下角按钮缩放。点建筑上的图标查看能做啥，不在那里就先坐地铁过去，过江更贵。</p><p>上班赚钞票，吃饭困觉保持状态，多和人来往交朋友。每30天交一次房租，亭子间¥2,800；有钱了可以去看房搬家，好房子睡得更香，但房租也更贵。去张江面试能换高薪工作。</p><p>登录后存档会存在云端，还能在地图上看到其他玩家、聊天、点名字牌向对方挥手。</p></>}
           {panel === "log" && <><h2>日脚</h2>{s ? s.log.map(([t, x], i) => <p key={i}><span className="t">{t}</span>{x}</p>) : <p>先开始游戏吧。</p>}</>}
           {panel === "friends" && <><h2>朋友</h2>{s && Object.keys(s.friends).length ? Object.entries(s.friends).map(([k, v]) => <p key={k}>{NPCS[k].name} <span className="t">· {v >= 60 ? "好朋友" : v >= 30 ? "熟人" : "认得"} {v}</span></p>) : <p>还没认得人。去城隍庙、武康路或永康路转转。</p>}
             {s?.pals && Object.keys(s.pals).length > 0 && <><h2 style={{ marginTop: 8 }}>玩家朋友</h2>{Object.entries(s.pals).map(([k, v]) => <p key={k}>{v.name} <span className="t">· 一起做过 {v.n} 次事{others[k] ? " · 在线" : ""}</span></p>)}</>}
@@ -210,7 +212,7 @@ export default function Game() {
             <p className="sub">送红包（对方接受后从侬这里扣钱）</p>
             <div className="gifts">{GIFT_AMOUNTS.map((a) => <button key={a} className="gift" disabled={s.money < a} onClick={() => send({ t: "gift", to: peer, amount: a })}>🧧 ¥{a}</button>)}</div>
             <p className="sub">邀请一起做（双方都多加社交和开心）</p>
-            <div className="acts">{coopable(s.at).map((c) => <button key={c.i} className="act" disabled={s.money < c.cost} onClick={() => send({ t: "invite", to: peer, i: c.i, label: c.label })}><span>🤝 一起{c.label}</span>{c.cost ? <small>各付¥{c.cost}</small> : null}</button>)}</div>
+            <div className="acts">{coopable(s.at).map((c) => <button key={c.i} className="act" disabled={c.cost > 0 && s.money < c.cost} onClick={() => send({ t: "invite", to: peer, i: c.i, label: c.label })}><span>🤝 一起{c.label}</span>{c.cost ? <small>各付¥{c.cost}</small> : null}</button>)}</div>
           </>}
         </aside>
       )}
@@ -239,7 +241,7 @@ function Start({ onStart }: { onStart: (name: string, job: JobId) => void }) {
     <>
       <div style={{ fontWeight: 700, fontSize: 15 }}>刚到上海，从一间亭子间开始。</div>
       <input id="nm" value={name} maxLength={12} onChange={(e) => setName(e.target.value)} aria-label="名字" />
-      <div className="jobs">{(Object.keys(JOBS) as JobId[]).map((k) => (
+      <div className="jobs">{(Object.keys(JOBS) as JobId[]).filter((k) => k !== "engineer").map((k) => (
         <button key={k} aria-pressed={k === job} onClick={() => setJob(k)}>{JOBS[k].ic} {JOBS[k].title}<br /><span className="sub">日薪¥{JOBS[k].pay}</span></button>
       ))}</div>
       <button className="big" onClick={() => onStart(name.trim() || "小张", job)}>开始过日脚</button>

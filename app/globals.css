@@ -95,3 +95,5 @@ a{color:var(--green)}
 .offer .row{display:flex;gap:8px;justify-content:flex-end}
 .btn.ghost{background:#f1f4f1}
 a.xbtn{display:block;text-align:center;text-decoration:none;opacity:1}
+.pin.mine .ic{position:relative}
+.pin.mine .ic::after{content:"🔑";position:absolute;right:-8px;top:-8px;font-size:12px;background:#fff;border-radius:50%;width:18px;height:18px;display:grid;place-items:center;box-shadow:0 1px 4px rgba(0,0,0,.25)}
