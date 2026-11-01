@@ -5,7 +5,8 @@ import { PLOT_COUNT, SUBURB, plotName, plotPos, type Plot } from "./plots";
 import { geo, HUANGPU, SUZHOU_CREEK } from "./geo";
 import { BOAT_COUNT, HUANGPU_BOATS, type Boat } from "./boats";
 import { KINDS, SLOTS, type Shop } from "./shops";
-import { EKINDS, ESTATE_COUNT, QIANTAN, estatePos, type Estate } from "./estates";
+import { EKINDS, ESTATE_COUNT, LOTS, estatePos, type Estate } from "./estates";
+const LOT_PLACE = LOTS.map((l) => l.place);
 
 export type Other = { id: string; name: string; at: PlaceId; color: number; act?: string };
 export type City = {
@@ -348,7 +349,8 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
   const free = (x: number, z: number) => {
     for (const k in PLACES) { const p = PLACES[k as PlaceId]; if (Math.hypot(p.x - x, p.z - z) < 9) return false; }
     if (Math.hypot(x - SUBURB.x, z - SUBURB.z - 10) < 32) return false;
-    if (Math.hypot(x - P.pvg.x, z - P.pvg.z) < 24 || Math.hypot(x - P.sha.x - 1, z - P.sha.z) < 17 || Math.hypot(x - P.dsh.x, z - P.dsh.z) < 32 || (Math.abs(x - QIANTAN.x) < 17 && z > QIANTAN.z - 2 && z < QIANTAN.z + 27)) return false;
+    if (Math.hypot(x - P.pvg.x, z - P.pvg.z) < 24 || Math.hypot(x - P.sha.x - 1, z - P.sha.z) < 17 || Math.hypot(x - P.dsh.x, z - P.dsh.z) < 32) return false;
+    for (let i = 0; i < ESTATE_COUNT; i++) { const e = estatePos(i); if (Math.abs(x - e.x) < 5 && Math.abs(z - e.z) < 5) return false; }
     if (coastPts.length && x > 120) { let cx = -1e9; for (let i = 1; i < coastPts.length; i++) { const [a, b] = [coastPts[i - 1], coastPts[i]]; if ((a[1] - z) * (b[1] - z) <= 0 && a[1] !== b[1]) cx = Math.max(cx, a[0] + ((z - a[1]) / (b[1] - a[1])) * (b[0] - a[0])); } if (cx > -1e9 && x > cx - 4) return false; }
     if (near(riverPts, x, z, 5.5) || near(creekPts, x, z, 2.6)) return false;
     if (segs.some(([a, b]) => segDist(x, z, a, b) < 2.2)) return false;
@@ -480,9 +482,6 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
   });
 
   /* ---- 前滩商业地块：12 块，盖好的店顶上挂招牌 ---- */
-  { const { x, z } = QIANTAN;
-    road(x - 14, z + 1.5, x + 14, z + 1.5); road(x - 14, z + 22.5, x + 14, z + 22.5); road(x - 14, z + 1.5, x - 14, z + 22.5); road(x + 14, z + 1.5, x + 14, z + 22.5);
-    for (let i = 0; i < 12; i++) tree(x - 13 + i * 2.4, z + 25, 0.8); }
   const signTexOf = (text: string, color: string) => {
     const cv = document.createElement("canvas"); cv.width = 256; cv.height = 128;
     const c = cv.getContext("2d")!; c.fillStyle = color; c.fillRect(0, 0, 256, 128); c.fillStyle = "#fff"; c.font = "bold 40px sans-serif"; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText(text.slice(0, 6), 128, 64);
@@ -495,8 +494,8 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
     const { x, z } = estatePos(id);
     const base = new THREE.Mesh(new THREE.BoxGeometry(6, 0.14, 6), M(0xc9c3b4)); base.position.set(x, 0.07, z); base.receiveShadow = true; scene.add(base);
     const sign = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.2), forSale); sign.position.set(x + 1.6, 1.4, z + 1.6); sign.quaternion.copy(cam.quaternion); scene.add(sign);
-    const tag = document.createElement("button"); tag.className = "lot"; tag.textContent = `${Math.floor(id / 4) + 1}-${(id % 4) + 1}`; overlay.appendChild(tag);
-    tag.onclick = (e) => { e.stopPropagation(); onPick("qt"); };
+    const tag = document.createElement("button"); tag.className = "lot"; tag.textContent = "商业地块"; tag.classList.add("estag"); overlay.appendChild(tag);
+    tag.onclick = (e) => { e.stopPropagation(); onPick(LOT_PLACE[id]); };
     estates.push({ base, obj: null, sign, tag, key: "", ver: -1, tex: null });
   }
 
@@ -582,7 +581,7 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
         if (E.key !== key) {
           E.key = key; if (E.obj) { scene.remove(E.obj); E.obj = null; }
           const { x, z } = estatePos(e.id);
-          E.tag.textContent = e.kind ? `${EKINDS[e.kind].ic} ${e.name}` : e.ownerName ? `${e.ownerName}的地` : `${Math.floor(e.id / 4) + 1}-${(e.id % 4) + 1} 待售`;
+          E.tag.textContent = e.kind ? `${EKINDS[e.kind].ic} ${e.name}` : e.ownerName ? `${e.ownerName}的地` : `商业地 ¥${(e.price / 10000).toFixed(0)}万`;
           E.tag.classList.toggle("sold", !!e.ownerName);
           if (e.kind) {
             const k = EKINDS[e.kind], g = new THREE.Group(), col = M(k.color), h = e.kind === "market" ? 2.6 : e.kind === "gym" ? 3.4 : 2.4;

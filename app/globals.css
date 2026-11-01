@@ -101,6 +101,7 @@ a.xbtn{display:block;text-align:center;text-decoration:none;opacity:1}
 .zoomed .lot,.lot.sold,.lot.mine{opacity:1}
 .lot.sold{background:rgba(29,42,36,.78);color:#fff}
 .lot.mine{background:var(--red);color:#fff}
+.lot.estag{opacity:1;border:1px solid #e8a530}
 .lotgrid{display:grid;grid-template-columns:repeat(6,1fr);gap:4px}
 .lotbtn{display:grid;gap:1px;padding:5px 2px;border:1px solid var(--line);border-radius:8px;font-size:10.5px;line-height:1.25;background:#fff;min-width:0}
 .lotbtn b{font-size:11px}

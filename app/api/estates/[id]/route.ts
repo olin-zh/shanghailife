@@ -1,11 +1,10 @@
 // 前滩商业地块的所有操作。钱都在服务器上算：先抢占/改数据库，再改存档，存档改不成就回滚。
 import { env, readCookie, userFromToken, SESSION_COOKIE, json } from "../../../../lib/auth";
 import { mutate, loadSave } from "../../../../lib/store";
-import { sBonus, type State } from "../../../../lib/game";
-import { EKINDS, ESTATE_COUNT, MAX_ESTATES, MAX_STAFF, canShift, doShift, estateName, estatePrice, priceOk, settle, shiftRevenue, visitEstate, wageOk, type EstateKind } from "../../../../lib/estates";
+import { PLACES, sBonus, type State } from "../../../../lib/game";
+import { EKINDS, ESTATE_COUNT, MAX_ESTATES, MAX_STAFF, canShift, doShift, estateName, estatePlace, estatePrice, priceOk, settle, shiftRevenue, visitEstate, wageOk, type EstateKind } from "../../../../lib/estates";
 
 type Row = { owner: string | null; owner_name: string | null; kind: EstateKind | null; name: string | null; price: number | null; wage: number | null; openings: number; till: number; npc: number; settled_at: number | null };
-const PLACE = "qt";
 const log = (n: State, t: string) => { n.log.unshift([`第${n.day}天`, t]); n.log = n.log.slice(0, 40); };
 
 async function staffCount(DB: D1Database, id: number) { return (await DB.prepare("SELECT COUNT(*) AS n FROM estate_staff WHERE estate_id = ?").bind(id).first<{ n: number }>())?.n ?? 0; }
@@ -38,8 +37,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const b = (await req.json().catch(() => ({}))) as Record<string, any>;
   const save = (await loadSave(DB, user.id)).state;
   if (!save) return json({ error: "先开始游戏" }, 400);
-  const here = save.at === PLACE, lot = estateName(id);
-  const needHere = (what: string) => (here ? null : json({ error: `先到前滩才能${what}` }, 400));
+  const PLACE = estatePlace(id), here = save.at === PLACE, lot = estateName(id);
+  const needHere = (what: string) => (here ? null : json({ error: `先到${PLACES[PLACE].name}才能${what}` }, 400));
 
   if (b.op === "buy") {
     const nh = needHere("买地"); if (nh) return nh;
