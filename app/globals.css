@@ -174,3 +174,18 @@ a.xbtn{display:block;text-align:center;text-decoration:none;opacity:1}
 .sheet{z-index:4}
 
 .panel{top:calc(var(--chips-b,92px) + 10px);max-height:calc(100vh - var(--chips-b,92px) - 30px);z-index:5}
+
+/* 顶栏只留三个图标按钮，其他功能收进菜单和账号 */
+.chips{display:none}
+.hbtns{display:flex;gap:4px;align-items:center;margin-left:auto}
+.ib{position:relative;width:36px;height:36px;border-radius:50%;background:#f1f4f1;font-size:17px;display:grid;place-items:center}
+.ib[aria-pressed=true]{background:#e8f3ec;box-shadow:inset 0 0 0 2px var(--green)}
+.badge{position:absolute;top:-3px;right:-3px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--green);color:#fff;font-size:10px;font-style:normal;line-height:16px;text-align:center}
+.badge.red{background:var(--red)}
+.menu{display:grid;gap:6px}
+.menu button{text-align:left;padding:10px 12px;border-radius:12px;background:#f4f6f3;font-size:14px}
+.back{justify-self:start;font-size:13px}
+.panel .tabs{display:flex;gap:6px}
+.panel .tabs button{flex:1;padding:8px;border-radius:10px;background:#f1f4f1}
+.panel .tabs button[aria-pressed=true]{background:#e8f3ec;color:var(--green);font-weight:700}
+@media (max-width:640px){.top .meta{font-size:11.5px;max-width:42vw}}

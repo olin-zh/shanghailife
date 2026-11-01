@@ -23,7 +23,7 @@ export default function Game() {
   const [sel, setSel] = useState<PlaceId | null>(null);
   const [cell, setCell] = useState<number | null>(null);
   const [i18nReady, setI18nReady] = useState(false);
-  const [panel, setPanel] = useState<"friends" | "log" | "help" | "chat" | "auth" | "skills" | "estates" | "money" | "admin" | "account" | "start" | null>(null);
+  const [panel, setPanel] = useState<"friends" | "log" | "help" | "chat" | "auth" | "skills" | "estates" | "money" | "admin" | "account" | "start" | "menu" | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [others, setOthers] = useState<Record<string, Other>>({});
   const [chats, setChats] = useState<Chat[]>([]);
@@ -204,7 +204,7 @@ export default function Game() {
   const [open, setOpen] = useState(false);
   // 右上角状态卡的高度写进 CSS 变量，右侧弹出的面板就排在它下面
   const hudRef = useRef<HTMLElement>(null);
-  useEffect(() => { const c = document.querySelector(".chips"); if (!c) return; const set = () => document.documentElement.style.setProperty("--chips-b", Math.round(c.getBoundingClientRect().bottom) + "px"); set(); const ro = new ResizeObserver(set); ro.observe(c); addEventListener("resize", set); return () => { ro.disconnect(); removeEventListener("resize", set); }; }, []);
+  useEffect(() => { const c = document.querySelector(".top"); if (!c) return; const set = () => document.documentElement.style.setProperty("--chips-b", Math.round(c.getBoundingClientRect().bottom) + "px"); set(); const ro = new ResizeObserver(set); ro.observe(c); addEventListener("resize", set); return () => { ro.disconnect(); removeEventListener("resize", set); }; }, []);
   useEffect(() => { const el = hudRef.current; if (!el) return; const set = () => document.documentElement.style.setProperty("--hud-h", (el.classList.contains("hud") ? el.offsetHeight + 10 : 0) + "px"); set(); const ro = new ResizeObserver(set); ro.observe(el); return () => ro.disconnect(); }, [!!s]);
   useEffect(() => { if (!open) return; const h = setTimeout(() => setOpen(false), 12000); return () => clearTimeout(h); }, [open, s]);
   useEffect(() => { setOpen(false); }, [sel, cell, peer]);
@@ -217,26 +217,14 @@ export default function Game() {
 
       <header className="top pill">
         <span className="brand">🏮 上海生活</span>
-        <select className="lang" aria-label="语言 / Language" value={currentLang()} onChange={(e) => setLang(e.target.value as Lang)}>{(Object.keys(LANGS) as Lang[]).map((l) => <option key={l} value={l}>{LANGS[l]}</option>)}</select>
         {s ? <span className="meta"><b>{clock(s)}</b> {`第${s.day}天`} · 心情 <b>{mood(s)}</b></span> : <span className="meta">拖动地图逛一逛，点建筑看看能做啥</span>}
-        {user ? (
-          <span className={"net " + online} title={online === "on" ? "已连线" : "未连线"}>{online === "on" ? `● ${Object.keys(others).length + 1} 人在线` : "○ 连线中"}</span>
-        ) : user === null ? (
-          <button className="btn primary" onClick={() => setPanel("auth")}>登录 / 注册</button>
-        ) : null}
+        <span className="hbtns">
+          <button className="ib" aria-label="聊天和朋友" title="聊天和朋友" aria-pressed={panel === "chat"} onClick={() => setPanel(panel === "chat" ? null : "chat")}>💬{user && online === "on" ? <i className="badge">{Object.keys(others).length + 1}</i> : null}</button>
+          <button className="ib" aria-label="菜单" title="菜单" aria-pressed={panel === "menu"} onClick={() => setPanel(panel === "menu" ? null : "menu")}>☰</button>
+          {user ? <button className="ib" aria-label="账号" title="账号" aria-pressed={panel === "account"} onClick={() => setPanel(panel === "account" ? null : "account")}>👤{isAdmin && pending ? <i className="badge red">{pending}</i> : null}</button>
+            : user === null ? <button className="btn primary" onClick={() => setPanel("auth")}>登录 / 注册</button> : null}
+        </span>
       </header>
-
-      <nav className="chips">
-        <button className="pill" onClick={() => setPanel(panel === "estates" ? null : "estates")}>{`🏗️ 买地 · 余${allParcels().length - plots.length - estates.length}格`}</button>
-        <button className="pill" onClick={() => setPanel(panel === "skills" ? null : "skills")}>🎯 能力</button>
-        <button className="pill" onClick={() => setPanel(panel === "money" ? null : "money")}>💰 账本</button>
-        {user && <button className="pill" onClick={() => setPanel(panel === "account" ? null : "account")}>👤 账号</button>}
-        {isAdmin && <button className="pill" onClick={() => setPanel(panel === "admin" ? null : "admin")}>🛠️ 管理{pending ? ` · ${pending} 待审` : ""}</button>}
-        <button className="pill" onClick={() => setPanel(panel === "chat" ? null : "chat")}>💬 聊天</button>
-        <button className="pill" onClick={() => setPanel(panel === "friends" ? null : "friends")}>🤝 朋友</button>
-        <button className="pill" onClick={() => setPanel(panel === "log" ? null : "log")}>📜 日脚</button>
-        <button className="pill" onClick={() => setPanel(panel === "help" ? null : "help")}>❓ 怎么玩</button>
-      </nav>
 
       {s && <section ref={hudRef} className={"hud" + (open ? "" : " folded")} onClick={() => { if (s && !open) setOpen(true); }}>{s ? (
         <>
@@ -303,7 +291,12 @@ export default function Game() {
                 {hiring.map((e) => <button key={e.id} className="act" onClick={() => { setPanel(null); setCell(e.id); setSel(null); city.current?.focus(estatePlace(e.id)); }}><span>{EKINDS[e.kind!].ic}「{e.name}」· 日薪¥{e.wage}</span><small>{PLACES[estatePlace(e.id)].name}旁 · 缺 {e.openings - e.staff.length} 人</small></button>)}
               </>; })()}</>}
           {panel === "money" && <LedgerBox user={user} s={s} />}
-          {panel === "account" && user && <AccountBox onSay={say} onUser={(u) => setUser(u)} onGone={() => { setUser(null); setPanel(null); }} />}
+          {panel === "account" && user && <AccountBox onSay={say} onUser={(u) => setUser(u)} onGone={() => { setUser(null); setPanel(null); }}
+            extra={<>
+              {isAdmin && <button className="btn ghost" onClick={() => setPanel("admin")}>🛠️ 管理后台{pending ? ` · ${pending} 待审` : ""}</button>}
+              {s && <><h2 style={{ marginTop: 8 }}>重新开始</h2><p className="sub">清掉当前角色从头再来，钱、地和店都会还回去。</p>
+                <ResetButton onReset={() => { setSel(null); setPanel("start"); api({ op: "reset" }); }} /></>}
+            </>} />}
           {panel === "admin" && isAdmin && <AdminBox onSay={say} onPending={setPending} />}
           {panel === "skills" && s && <><h2>能力</h2><p className="muted">驾驶最高 20 级、每级 +0.1%；其他能力最高 50 级、每级 +4%。</p>
             {(Object.keys(SKILLS) as SkillId[]).map((k) => { const v = skillLv(s.sk?.[k] || 0, skillMax(k)), sk = SKILLS[k]; return (
@@ -313,8 +306,20 @@ export default function Game() {
                 <div style={{ height: 6, background: "#0001", borderRadius: 3, margin: "4px 0" }}><div style={{ height: 6, borderRadius: 3, background: "#e0533d", width: `${v.need ? (v.into / v.need) * 100 : 100}%` }} /></div>
                 <div className="muted" style={{ fontSize: 12 }}>{v.need ? `再 ${v.need - v.into} 点升级 · ` : "已满级 · "}怎么练：{sk.how}。作用：{sk.use}。</div>
               </div>); })}</>}
+          {panel === "menu" && <><h2>菜单</h2>
+            <div className="menu">
+              <button onClick={() => setPanel("estates")}>{`🏗️ 买地 · 余${allParcels().length - plots.length - estates.length}格`}</button>
+              <button onClick={() => setPanel("skills")}>🎯 能力</button>
+              <button onClick={() => setPanel("money")}>💰 账本</button>
+              <button onClick={() => setPanel("log")}>📜 日脚</button>
+              <button onClick={() => setPanel("help")}>❓ 怎么玩</button>
+            </div>
+            <label className="pricerow">🌐 语言 / Language<select className="lang" value={currentLang()} onChange={(e) => setLang(e.target.value as Lang)}>{(Object.keys(LANGS) as Lang[]).map((l) => <option key={l} value={l}>{LANGS[l]}</option>)}</select></label></>}
+          {["estates", "skills", "money", "log", "help"].includes(panel) && <button className="link back" onClick={() => setPanel("menu")}>‹ 菜单</button>}
+          {panel === "admin" && <button className="link back" onClick={() => setPanel("account")}>‹ 账号</button>}
           {panel === "help" && <><h2>怎么玩</h2><p>拖动地图看看上海，滚轮或右下角按钮缩放。点建筑上的图标查看能做啥，不在那里就先坐地铁过去，过江更贵。</p><p>上班赚钞票，吃饭困觉保持状态，多和人来往交朋友。每30天交一次房租，亭子间¥2,800；有钱了可以去看房搬家，好房子睡得更香，但房租也更贵。去张江面试能换高薪工作。</p><p>地图按 300 米一格划分。淡黄的格子是住宅地、淡蓝的是商业地，点一格就能看价格；人到旁边的地点就能买。买住宅地自动盖房，搬进去就不用交房租；商业地可以盖健身房、咖啡馆、超市、服装店，挂招牌、雇玩家。</p><p>登录后存档会存在云端，还能在地图上看到其他玩家、聊天、点名字牌向对方挥手。</p></>}
           {panel === "log" && <><h2>日脚</h2>{s ? s.log.map(([t, x], i) => <p key={i}><span className="t">{t}</span>{x}</p>) : <p>先开始游戏吧。</p>}</>}
+          {(panel === "chat" || panel === "friends") && <div className="tabs"><button aria-pressed={panel === "chat"} onClick={() => setPanel("chat")}>💬 聊天</button><button aria-pressed={panel === "friends"} onClick={() => setPanel("friends")}>🤝 朋友</button></div>}
           {panel === "friends" && <><h2>朋友</h2>{s && Object.keys(s.friends).length ? Object.entries(s.friends).map(([k, v]) => <p key={k}>{NPCS[k].name} <span className="t">· {v >= 60 ? "好朋友" : v >= 30 ? "熟人" : "认得"} {v}</span></p>) : <p>还没认得人。去城隍庙、武康路或永康路转转。</p>}
             {s?.pals && Object.keys(s.pals).length > 0 && <><h2 style={{ marginTop: 8 }}>玩家朋友</h2>{Object.entries(s.pals).map(([k, v]) => <p key={k}>{v.name} <span className="t">· 一起做过 {v.n} 次事{others[k] ? " · 在线" : ""}</span></p>)}</>}
             {Object.keys(others).length > 0 && <><h2 style={{ marginTop: 8 }}>在线玩家</h2>{Object.values(others).map((o) => <p key={o.id}><button className="link" style={{ textDecoration: "none", color: "var(--ink)", fontSize: 13 }} onClick={() => { setPeer(o.id); setSel(null); }}>{o.name}</button> <span className="t">· 在{PLACES[o.at].name}</span></p>)}</>}</>}
@@ -354,7 +359,7 @@ export default function Game() {
       )}
 
       <div className="zoom"><button aria-label="放大" onClick={() => city.current?.zoomBy(1.3)}>＋</button><button aria-label="缩小" onClick={() => city.current?.zoomBy(1 / 1.3)}>－</button></div>
-      {s && <ResetButton onReset={() => { setSel(null); if (user) { api({ op: "reset" }); setPanel("start"); } else { try { localStorage.removeItem(LOCAL); } catch {} setS(null); } }} />}
+
       {toast && <div className="toast" role="status">{toast}</div>}
     </>
   );
@@ -450,7 +455,7 @@ function ChatBox({ user, chats, online, onSend, onLogin }: { user: User | null |
 function ResetButton({ onReset }: { onReset: () => void }) {
   const [c, setC] = useState(false);
   useEffect(() => { if (!c) return; const h = setTimeout(() => setC(false), 3000); return () => clearTimeout(h); }, [c]);
-  return <button className="reset pill" onClick={() => (c ? (onReset(), setC(false)) : setC(true))}>{c ? "再点一次确认重新开始" : "重新开始"}</button>;
+  return <button className="btn ghost" onClick={() => (c ? (onReset(), setC(false)) : setC(true))}>{c ? "再点一次确认重新开始" : "重新开始"}</button>;
 }
 
 // 把图片缩放裁成 2:1 的 JPEG（最大 640×320），顺便去掉照片里的定位等信息
@@ -763,7 +768,7 @@ function AdminBox({ onSay, onPending }: { onSay: (t: string) => void; onPending:
 }
 
 // 账号管理
-function AccountBox({ onSay, onUser, onGone }: { onSay: (t: string) => void; onUser: (u: User) => void; onGone: () => void }) {
+function AccountBox({ onSay, onUser, onGone, extra }: { onSay: (t: string) => void; onUser: (u: User) => void; onGone: () => void; extra?: React.ReactNode }) {
   type A = { email: string | null; name: string; x: boolean; hasPassword: boolean; createdAt: number; sessions: number; admin: boolean };
   const [a, setA] = useState<A | null>(null);
   const [name, setName] = useState(""); const [cur, setCur] = useState(""); const [next, setNext] = useState("");
@@ -776,6 +781,7 @@ function AccountBox({ onSay, onUser, onGone }: { onSay: (t: string) => void; onU
     <h2>账号</h2>
     <p>{a.email ? `📧 ${a.email}` : "𝕏 用 X 账号登录"}{a.admin ? " · 🛠️ 管理员" : ""}</p>
     <p className="sub">{`注册于 ${new Date(a.createdAt).toLocaleDateString()} · 登录中的设备 ${a.sessions} 台`}</p>
+    {extra}
     <h2 style={{ marginTop: 8 }}>昵称</h2>
     <p className="sub">显示在你的地、店、游船广告和员工名单上。</p>
     <div className="row2"><input id="acc-name" value={name} maxLength={16} onChange={(e) => setName(e.target.value)} /><button className="btn primary" disabled={!name.trim() || name === a.name} onClick={async () => { const d = await post({ op: "name", name }); if (d?.user) onUser(d.user); }}>保存</button></div>

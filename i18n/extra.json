@@ -346,5 +346,49 @@
  "管理员清除玩家数据": [
   "Admin cleared player data",
   "管理者がプレイヤーデータを消去"
+ ],
+ "菜单": [
+  "Menu",
+  "メニュー"
+ ],
+ "聊天和朋友": [
+  "Chat & friends",
+  "チャットと友達"
+ ],
+ "‹ 菜单": [
+  "‹ Menu",
+  "‹ メニュー"
+ ],
+ "‹ 账号": [
+  "‹ Account",
+  "‹ アカウント"
+ ],
+ "🌐 语言 / Language": [
+  "🌐 Language",
+  "🌐 言語 / Language"
+ ],
+ "🛠️ 管理后台": [
+  "🛠️ Admin console",
+  "🛠️ 管理画面"
+ ],
+ "清掉当前角色从头再来，钱、地和店都会还回去。": [
+  "Wipe this character and start over; money, land and shops are returned.",
+  "このキャラクターを消して最初から。お金・土地・店は返却されます。"
+ ],
+ "🛠️ 管理后台 · {1} 待审": [
+  "🛠️ Admin console · {1} pending",
+  "🛠️ 管理画面 · 審査待ち{1}件"
+ ],
+ "💬 聊天": [
+  "💬 Chat",
+  "💬 チャット"
+ ],
+ "🤝 朋友": [
+  "🤝 Friends",
+  "🤝 友達"
+ ],
+ "重新开始": [
+  "Start over",
+  "やり直す"
  ]
 }
