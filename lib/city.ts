@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { PLACES, type PlaceId } from "./game";
 import type { Plot } from "./plots";
 import { geo, onGrid } from "./geo";
+import { t as tr, currentLang } from "./i18n";
 import { CELL, COLS, ROWS, XMIN, ZMIN, XMAX, ZMAX, T, buildGrid, centerOf, cellOf, cellId, cellPos, allParcels, parcelOf, ROADS, RIVER_PTS, CREEK_PTS, COAST_PTS, SEA_POLY, GREENS, DISTRICTS, METROS } from "./grid";
 import { BOAT_COUNT, HUANGPU_BOATS, type Boat } from "./boats";
 import { KINDS, SLOTS, type Shop } from "./shops";
@@ -376,7 +377,7 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
 
   /* ---- 覆盖层 ---- */
   const labels: HTMLElement[] = [];
-  ([["黄浦江", 121.4985, 31.214, ""], ["苏州河", 121.43, 31.2405, ""], ["东 海", 122.05, 31.05, ""], ...DISTRICTS.map((d) => [d.name.split("").join(" "), d.label[0], d.label[1], "land"]), ...GREENS.map((g) => [g.name, null, g, "park"])] as const).forEach(([t, lon, lat, c]) => {
+  ([["黄浦江", 121.4985, 31.214, ""], ["苏州河", 121.43, 31.2405, ""], ["东 海", 122.05, 31.05, ""], ...DISTRICTS.map((d) => [currentLang() === "en" ? tr(d.name) : tr(d.name).split("").join(" "), d.label[0], d.label[1], "land"]), ...GREENS.map((g) => [g.name, null, g, "park"])] as const).forEach(([t, lon, lat, c]) => {
     let x: number, z: number;
     if (lon === null) { const g = lat as unknown as { i: number; j: number; w: number; h: number }; [x, z] = centerOf(g.i, g.j); x += CELL * (g.w - 1) / 2; z += CELL * (g.h - 1) / 2; } else [x, z] = G(lon as number, lat as number);
     const d = document.createElement("div"); d.className = "lbl " + c; d.textContent = t as string; d.dataset.x = String(x); d.dataset.z = String(z); overlay.appendChild(d); labels.push(d);
@@ -444,7 +445,7 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
   const hpPath = mkPath(riverPts.slice(1, 16)), ckPath = mkPath(creekPts.slice(1));
   const adCanvas = document.createElement("canvas"); adCanvas.width = 256; adCanvas.height = 128;
   { const c = adCanvas.getContext("2d")!; c.fillStyle = "#f6f3ea"; c.fillRect(0, 0, 256, 128); c.strokeStyle = "#c4472f"; c.lineWidth = 8; c.strokeRect(4, 4, 248, 120);
-    c.fillStyle = "#c4472f"; c.font = "bold 34px sans-serif"; c.textAlign = "center"; c.fillText("广告位招租", 128, 62); c.fillStyle = "#5d6b63"; c.font = "22px sans-serif"; c.fillText("点我上传图片", 128, 98); }
+    c.fillStyle = "#c4472f"; c.font = "bold 34px sans-serif"; c.textAlign = "center"; c.fillText(tr("广告位招租"), 128, 62, 240); c.fillStyle = "#5d6b63"; c.font = "22px sans-serif"; c.fillText(tr("点我上传图片"), 128, 98, 240); }
   const adFree = new THREE.CanvasTexture(adCanvas); adFree.colorSpace = THREE.SRGBColorSpace;
   const freeMat = new THREE.MeshBasicMaterial({ map: adFree, side: THREE.DoubleSide });
   const loader = new THREE.TextureLoader();
@@ -499,7 +500,7 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
   /* ---- 前滩商业地块：12 块，盖好的店顶上挂招牌 ---- */
   const signTexOf = (text: string, color: string) => {
     const cv = document.createElement("canvas"); cv.width = 256; cv.height = 128;
-    const c = cv.getContext("2d")!; c.fillStyle = color; c.fillRect(0, 0, 256, 128); c.fillStyle = "#fff"; c.font = "bold 40px sans-serif"; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText(text.slice(0, 6), 128, 64);
+    const c = cv.getContext("2d")!; c.fillStyle = color; c.fillRect(0, 0, 256, 128); c.fillStyle = "#fff"; c.font = "bold 40px sans-serif"; c.textAlign = "center"; c.textBaseline = "middle"; const tx = tr(text); c.fillText(tx.length > 10 ? tx.slice(0, 10) : tx, 128, 64, 240);
     const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t;
   };
   type ES = { obj: THREE.Group | null; sign: THREE.Mesh; tag: HTMLButtonElement; key: string; ver: number; tex: THREE.Texture | null };

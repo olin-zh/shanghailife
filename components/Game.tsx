@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createCity, type City, type Other } from "../lib/city";
 import type { Plot } from "../lib/plots";
+import { LANGS, currentLang, initI18n, setLang, type Lang } from "../lib/i18n";
 import { allParcels, parcelName, parcelOf, MAX_HOUSES } from "../lib/grid";
 import { AD_DAYS, AD_USD_CENTS, BOAT_COUNT, boatName, type Boat } from "../lib/boats";
 import { EKINDS, MAX_STAFF, SHIFT_MINS, WAGE_MAX, WAGE_MIN, estateName, estatePlace, estatePrice, perDay, type Estate, type EstateKind } from "../lib/estates";
@@ -21,6 +22,7 @@ export default function Game() {
   const [s, setS] = useState<State | null>(null);
   const [sel, setSel] = useState<PlaceId | null>(null);
   const [cell, setCell] = useState<number | null>(null);
+  const [i18nReady, setI18nReady] = useState(false);
   const [panel, setPanel] = useState<"friends" | "log" | "help" | "chat" | "auth" | "skills" | "estates" | "money" | "admin" | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [others, setOthers] = useState<Record<string, Other>>({});
@@ -50,8 +52,11 @@ export default function Game() {
   // 地图
   useEffect(() => {
     if (!mapRef.current) return;
+    let dead = false;
+    initI18n().then(() => { if (dead || !mapRef.current) return;
     city.current = createCity(mapRef.current, (id) => { setSel(id); setCell(null); setPeer(null); city.current?.focus(id); }, (id) => { setPeer(id); setSel(null); setCell(null); }, (id) => { setBoatSel(id); }, (id) => { setCell(id); setSel(null); setPeer(null); });
-    return () => city.current?.dispose();
+    setI18nReady(true); });
+    return () => { dead = true; city.current?.dispose(); };
   }, [say]);
 
   // 读取登录状态和存档
@@ -93,15 +98,15 @@ export default function Game() {
   }, [user, api, say]);
 
   // 地块：进来先拉一次，之后每 20 秒刷新，看看别人买了哪块
-  useEffect(() => { city.current?.setCell(cell); }, [cell]);
+  useEffect(() => { city.current?.setCell(cell); }, [cell, i18nReady]);
   useEffect(() => { loadPlots(); const h = setInterval(loadPlots, 20000); return () => clearInterval(h); }, [loadPlots, user]);
-  useEffect(() => { city.current?.setPlots(plots); }, [plots]);
+  useEffect(() => { city.current?.setPlots(plots); }, [plots, i18nReady]);
   useEffect(() => { loadBoats(); const h = setInterval(loadBoats, 30000); return () => clearInterval(h); }, [loadBoats, user]);
-  useEffect(() => { city.current?.setBoats(boats); }, [boats]);
+  useEffect(() => { city.current?.setBoats(boats); }, [boats, i18nReady]);
   useEffect(() => { loadShops(); const h = setInterval(loadShops, 20000); return () => clearInterval(h); }, [loadShops, user]);
-  useEffect(() => { city.current?.setShops(shops); }, [shops]);
+  useEffect(() => { city.current?.setShops(shops); }, [shops, i18nReady]);
   useEffect(() => { loadEstates(); const h = setInterval(loadEstates, 20000); return () => clearInterval(h); }, [loadEstates, user]);
-  useEffect(() => { city.current?.setEstates(estates); }, [estates]);
+  useEffect(() => { city.current?.setEstates(estates); }, [estates, i18nReady]);
   const estateOp = async (id: number, body: Record<string, unknown>) => {
     setBusy(true);
     const r = await fetch(`/api/estates/${id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).catch(() => null);
@@ -173,8 +178,8 @@ export default function Game() {
     city.current?.setPlayers(list);
     city.current?.setHere(s?.at ?? null);
     city.current?.setMine(s ? homePlace(s) : null);
-  }, [others, s]);
-  useEffect(() => { city.current?.setSelected(sel); }, [sel]);
+  }, [others, s, i18nReady]);
+  useEffect(() => { city.current?.setSelected(sel); }, [sel, i18nReady]);
 
   const after = (st: State | null, label?: string, moved?: PlaceId) => {
     if (moved && st?.at === moved) { send({ t: "move" }); city.current?.focus(moved); }
@@ -202,7 +207,8 @@ export default function Game() {
 
       <header className="top pill">
         <span className="brand">🏮 上海生活</span>
-        {s ? <span className="meta"><b>{clock(s)}</b> 第{s.day}天 · 心情 <b>{mood(s)}</b></span> : <span className="meta">拖动地图逛一逛，点建筑看看能做啥</span>}
+        <select className="lang" aria-label="语言 / Language" value={currentLang()} onChange={(e) => setLang(e.target.value as Lang)}>{(Object.keys(LANGS) as Lang[]).map((l) => <option key={l} value={l}>{LANGS[l]}</option>)}</select>
+        {s ? <span className="meta"><b>{clock(s)}</b> {`第${s.day}天`} · 心情 <b>{mood(s)}</b></span> : <span className="meta">拖动地图逛一逛，点建筑看看能做啥</span>}
         {user ? (
           <span className={"net " + online} title={online === "on" ? "已连线" : "未连线"}>{online === "on" ? `● ${Object.keys(others).length + 1} 人在线` : "○ 连线中"}</span>
         ) : user === null ? (
@@ -211,7 +217,7 @@ export default function Game() {
       </header>
 
       <nav className="chips">
-        <button className="pill" onClick={() => setPanel(panel === "estates" ? null : "estates")}>🏗️ 买地 · 余{allParcels().length - plots.length - estates.length}格</button>
+        <button className="pill" onClick={() => setPanel(panel === "estates" ? null : "estates")}>{`🏗️ 买地 · 余${allParcels().length - plots.length - estates.length}格`}</button>
         <button className="pill" onClick={() => setPanel(panel === "skills" ? null : "skills")}>🎯 能力</button>
         <button className="pill" onClick={() => setPanel(panel === "money" ? null : "money")}>💰 账本</button>
         {isAdmin && <button className="pill" onClick={() => setPanel(panel === "admin" ? null : "admin")}>🛠️ 管理{pending ? ` · ${pending} 待审` : ""}</button>}
