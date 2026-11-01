@@ -357,6 +357,10 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
   // 青年旅舍：火车站旁一栋五层小楼，楼顶招牌
   { const { x, z } = P.hostel; plot(x, z, 7, 6, mats.stone); box(4.4, 5, 3.4, M(0xe9c44c), x, 0, z - 0.6); box(4.6, 0.3, 3.6, mats.dk, x, 5, z - 0.6);
     for (let k = 0; k < 4; k++) box(3.6, 0.5, 0.06, mats.glass, x, 0.9 + k * 1.05, z + 1.12); box(3, 0.8, 0.15, mats.red, x, 5.3, z + 1.0); }
+  // 三甲医院：白色主楼 + 红十字 + 门诊裙楼
+  for (const k of ["ruijin", "huashan", "renji"] as const) { const { x, z } = P[k];
+    plot(x, z, 8, 7, mats.stone); box(3.2, 7, 3, mats.white, x - 1, 0, z - 1); box(5, 2.2, 2.6, mats.white, x + 0.6, 0, z + 1.4); box(5.2, 0.25, 2.8, mats.glass2, x + 0.6, 2.2, z + 1.4);
+    box(1.4, 0.4, 0.12, mats.red, x - 1, 5.4, z + 0.55); box(0.4, 1.4, 0.12, mats.red, x - 1, 4.9, z + 0.55); }
   // 轮渡
   const FERRY = { x: P.ferry.x, z: P.ferry.z };
   box(3, 0.4, 2, mats.wood, FERRY.x - 2.5, 0, FERRY.z); box(1.5, 1.2, 1.2, mats.white, FERRY.x - 2.5, 0.4, FERRY.z);

@@ -1,7 +1,7 @@
 // 纯游戏规则：不依赖界面，前后端都能用。
 import { geo, onGrid } from "./geo";
 const at = (lon: number, lat: number) => onGrid(geo(lon, lat)); // 所有地点都落在格子中心
-export type PlaceId = "home" | "rmgy" | "metro" | "bund" | "chp" | "tzf" | "wk" | "ykl" | "ljz" | "ferry" | "njl" | "jas" | "xtd" | "xjh" | "hq" | "wjc" | "expo" | "sjgy" | "zj" | "gongfang" | "jiangjing" | "yangfang" | "sjxc" | "pvg" | "sha" | "dsh" | "qt" | "hostel";
+export type PlaceId = "home" | "rmgy" | "metro" | "bund" | "chp" | "tzf" | "wk" | "ykl" | "ljz" | "ferry" | "njl" | "jas" | "xtd" | "xjh" | "hq" | "wjc" | "expo" | "sjgy" | "zj" | "gongfang" | "jiangjing" | "yangfang" | "sjxc" | "pvg" | "sha" | "dsh" | "qt" | "hostel" | "ruijin" | "huashan" | "renji";
 export type JobId = "coder" | "barista" | "designer" | "engineer" | "waiter" | "clerk" | "courier" | "guard" | "sales";
 export type Stats = { energy: number; hunger: number; fun: number; social: number };
 export type State = Stats & {
@@ -156,6 +156,9 @@ export const PLACES: Record<PlaceId, { name: string; ic: string; x: number; z: n
   sjxc: { name: "松江新城售楼处", ic: "🏘️", ...at(121.228, 31.0325), h: 6, sub: "松江 · 24 块地出售", desc: "地铁9号线终点附近的新城，湖边一排排待建的地块，买下一块就有自己的家。" },
   pvg: { name: "浦东机场", ic: "✈️", ...at(121.805, 31.143), h: 6, sub: "浦东 · 国际航班", desc: "两座航站楼像展开的翅膀，磁悬浮七分多钟从龙阳路飞过来。" },
   sha: { name: "虹桥机场", ic: "🛫", ...at(121.356, 31.1955), h: 5, sub: "长宁 · 国内航班", desc: "离市区近，跑道另一头就是虹桥火车站，飞机和高铁背靠背。" },
+  ruijin: { name: "瑞金医院", ic: "🏥", ...at(121.4693, 31.212), h: 8, sub: "黄浦 · 三甲医院", desc: "上海交大医学院附属瑞金医院，瑞金二路上，全国排名靠前的综合医院，专家号很难挂。" },
+  huashan: { name: "华山医院", ic: "🏥", ...at(121.4413, 31.217), h: 8, sub: "静安 · 三甲医院", desc: "复旦大学附属华山医院，乌鲁木齐中路上，神经内科和皮肤科全国有名。" },
+  renji: { name: "仁济医院东院", ic: "🏥", ...at(121.5205, 31.2285), h: 8, sub: "浦东 · 三甲医院", desc: "上海交大医学院附属仁济医院，浦东东方路上，离陆家嘴不远。" },
   hostel: { name: "火车站青年旅舍", ic: "🛏️", ...at(121.455, 31.249), h: 5, sub: "静安 · 上海火车站旁", desc: "刚到上海的人第一站：八人间床位 ¥50 一晚，楼下就是地铁。先在这里落脚，攒够押金再租房。" },
   qt: { name: "前滩", ic: "🏬", ...at(121.486, 31.152), h: 6, sub: "浦东 · 新商务区", desc: "黄浦江边的新商务区，太古里、写字楼和滨江绿道连成一片。" },
   dsh: { name: "滴水湖", ic: "🌊", ...at(121.930, 30.905), h: 4, sub: "临港 · 东海边", desc: "一圈圈同心圆的人工湖，湖边风车慢慢转，再往东就是大海。" },
@@ -175,6 +178,10 @@ export const NPCS: Record<string, { name: string; line: string }> = {
 
 type Act = [label: string, mins: number, cost: number, eff: Partial<Stats>, kind?: "work" | "overtime" | "gig" | "interview" | "rent" | "movein" | "trip" | "apply" | null, npc?: string];
 const HOME_ACTS: Act[] = [["困觉（睡一觉）", 480, 0, { energy: 70, hunger: -25 }], ["在家做饭", 60, 25, { hunger: 45, fun: 3 }], ["刷网课学技能", 120, 49, { energy: -8, fun: -5 }], ["刷手机", 60, 0, { fun: 15, energy: -5 }], ["外卖点一份炸猪排", 40, 38, { hunger: 45 }]];
+// 三甲医院：看病、体检、住院休养
+const HOSPITAL_ACTS: Act[] = [["挂专家号看病", 150, 350, { energy: 20, fun: -5 }], ["住院休养一晚", 720, 1200, { energy: 80, hunger: 20, fun: -10 }], ["做一次全面体检", 180, 800, { fun: 5, energy: -5 }], ["医院食堂吃饭", 30, 20, { hunger: 40 }]];
+export const HOSPITALS: PlaceId[] = ["ruijin", "huashan", "renji"];
+const nearestHospital = (s: State) => HOSPITALS.reduce((a, b) => (Math.hypot(PLACES[b].x - PLACES[s.at].x, PLACES[b].z - PLACES[s.at].z) < Math.hypot(PLACES[a].x - PLACES[s.at].x, PLACES[a].z - PLACES[s.at].z) ? b : a));
 export const ACTS: Record<PlaceId, Act[]> = {
   gongfang: HOME_ACTS, jiangjing: HOME_ACTS, yangfang: HOME_ACTS,
   sjxc: [["湖边散步", 45, 0, { fun: 10, energy: -3 }], ["逛新城万达", 90, 60, { fun: 15, hunger: 20 }]],
@@ -190,6 +197,7 @@ export const ACTS: Record<PlaceId, Act[]> = {
   ferry: [["坐轮渡吹江风", 30, 2, { fun: 14 }]],
   pvg: [["飞东京玩三天", 4320, 3200, { fun: 60, energy: -25, social: 10 }], ["飞巴厘岛躺五天", 7200, 5800, { fun: 80, energy: 20, hunger: -10 }], ["去接机，顺便吃碗面", 90, 35, { hunger: 30, social: 8 }]],
   sha: [["飞三亚度假两天", 2880, 1900, { fun: 45, energy: 10 }], ["飞北京出差一天", 1440, 1200, { energy: -30, fun: -5 }, "trip"], ["隔着玻璃看飞机起降", 40, 0, { fun: 10 }]],
+  ruijin: HOSPITAL_ACTS, huashan: HOSPITAL_ACTS, renji: HOSPITAL_ACTS,
   hostel: [["困觉（床位¥50/晚）", 480, 50, { energy: 70, hunger: -25 }], ["和室友吹牛", 60, 0, { social: 12, fun: 6 }], ["刷招聘软件", 30, 0, { fun: -3 }], ["外卖点一份炸猪排", 40, 38, { hunger: 45 }]],
   qt: [["江边绿道散步", 60, 0, { fun: 14, energy: -4 }], ["在太古里吃个午饭", 50, 75, { hunger: 50, fun: 8 }]],
   dsh: [["环湖骑行", 120, 30, { fun: 25, energy: -15 }], ["海边看日出", 90, 0, { fun: 22, energy: -5 }], ["吃一顿海鲜大排档", 80, 160, { hunger: 60, fun: 15 }], ["逛海昌海洋公园", 240, 290, { fun: 40, energy: -18 }]],
@@ -271,7 +279,7 @@ export function advance(s: State, mins: number) {
 }
 
 export function check(s: State) {
-  if (s.hunger <= 0) { s.hunger = 30; s.money -= 200; s.at = homePlace(s); log(s, "饿昏了头，被送去社区医院挂了水，花了¥200。"); }
+  if (s.hunger <= 0) { const h = nearestHospital(s); s.hunger = 30; s.money -= 500; s.at = h; log(s, `饿昏了头，被 120 送到${PLACES[h].name}挂了水，花了¥500。`); }
   if (s.energy <= 0) { s.energy = 40; s.at = homePlace(s); advance(s, 600); log(s, "累到在地铁上困着，坐过了五站。回家困了一整夜。"); }
   if (s.money < -3000) log(s, "欠了一屁股债，只好卷铺盖回老家。点“重新开始”再来一局。");
 }
