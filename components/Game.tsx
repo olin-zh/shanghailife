@@ -4,7 +4,7 @@ import { createCity, type City, type Other } from "../lib/city";
 import { plotName, type Plot } from "../lib/plots";
 import { AD_DAYS, AD_PRICE, BOAT_COUNT, boatName, type Boat } from "../lib/boats";
 import { DEPOSIT, KINDS, SLOTS, npcPerHour, slotAt, type Shop, type ShopKind } from "../lib/shops";
-import { actsAt, homeOf, isHome, HOMES, GIGS, gigHint, jobTitle, lvOf, nextLvXp, LV_XP, weeklyCost, GIFT_AMOUNTS, JOBS, NPCS, PLACES, act, clock, coopable, isState, mood, newGame, travel, trip, SKILLS, SKILL_MAX, SKILL_BONUS, LICENSE_LV, skillLv, type SkillId, type JobId, type PlaceId, type State } from "../lib/game";
+import { actsAt, homeOf, isHome, HOMES, GIGS, gigHint, jobTitle, lvOf, nextLvXp, LV_XP, weeklyCost, GIFT_AMOUNTS, JOBS, NPCS, PLACES, act, clock, coopable, isState, mood, newGame, travel, trip, SKILLS, skillMax, skillPer, LICENSE_LV, skillLv, type SkillId, type JobId, type PlaceId, type State } from "../lib/game";
 
 type User = { id: string; email: string; name: string };
 type Chat = { id: string; name: string; at: PlaceId; text: string; ts: number };
@@ -254,11 +254,11 @@ export default function Game() {
         <aside className="panel">
           <button className="x" aria-label="关闭" onClick={() => setPanel(null)}>✕</button>
           {panel === "auth" && <Auth xOn={xOn} onDone={(u) => { setUser(u); setPanel(null); say(`欢迎，${u.name}`); }} />}
-          {panel === "skills" && s && <><h2>能力</h2><p className="muted">每种能力最高 {SKILL_MAX} 级，每级加成 {(SKILL_BONUS * 100).toFixed(1)}%。</p>
-            {(Object.keys(SKILLS) as SkillId[]).map((k) => { const v = skillLv(s.sk?.[k] || 0), sk = SKILLS[k]; return (
+          {panel === "skills" && s && <><h2>能力</h2><p className="muted">驾驶最高 20 级、每级 +0.1%；其他能力最高 50 级、每级 +4%。</p>
+            {(Object.keys(SKILLS) as SkillId[]).map((k) => { const v = skillLv(s.sk?.[k] || 0, skillMax(k)), sk = SKILLS[k]; return (
               <div key={k} style={{ margin: "10px 0" }}>
                 <b>{sk.ic} {sk.name} · {v.lv} 级</b>{k === "drive" && <span className="muted">{v.lv >= LICENSE_LV ? " · 已有驾照" : " · 未考驾照"}</span>}
-                <span className="muted" style={{ float: "right" }}>+{(v.lv * SKILL_BONUS * 100).toFixed(1)}%</span>
+                <span className="muted" style={{ float: "right" }}>+{+(v.lv * skillPer(k) * 100).toFixed(1)}%</span>
                 <div style={{ height: 6, background: "#0001", borderRadius: 3, margin: "4px 0" }}><div style={{ height: 6, borderRadius: 3, background: "#e0533d", width: `${v.need ? (v.into / v.need) * 100 : 100}%` }} /></div>
                 <div className="muted" style={{ fontSize: 12 }}>{v.need ? `再 ${v.need - v.into} 点升级 · ` : "已满级 · "}怎么练：{sk.how}。作用：{sk.use}。</div>
               </div>); })}</>}

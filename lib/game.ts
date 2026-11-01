@@ -35,13 +35,16 @@ export const SKILLS: Record<SkillId, { name: string; ic: string; how: string; us
   drive: { name: "驾驶", ic: "🚗", how: "五角场驾校练车、开网约车", use: `练到 3 级考出驾照，解锁开网约车；坐车更快` },
   sh: { name: "上海话", ic: "🗨️", how: "和王阿姨、陈爷叔、李妈妈、扫地阿姨聊天，跟爷叔学上海话", use: "和本地 NPC 的好感涨得更快" },
 };
-export const SKILL_MAX = 20;
-export const SKILL_BONUS = 0.001; // 每级 +0.1%
+export const SKILL_MAX = 50;
+export const SKILL_BONUS = 0.04; // 每级 +4%
+// 驾驶单独一套：最高 20 级，每级 +0.1%
+export const skillMax = (k: SkillId) => (k === "drive" ? 20 : SKILL_MAX);
+export const skillPer = (k: SkillId) => (k === "drive" ? 0.001 : SKILL_BONUS);
 export const LICENSE_LV = 3;
 // 从 n 级升到 n+1 级需要 3+n 点经验，满 20 级共 250 点
-export function skillLv(xp: number) { let lv = 0, need = 3; while (lv < SKILL_MAX && xp >= need) { xp -= need; lv++; need = 3 + lv; } return { lv, into: xp, need: lv >= SKILL_MAX ? 0 : need }; }
-export const sLv = (s: State, k: SkillId) => skillLv(s.sk?.[k] || 0).lv;
-export const sBonus = (s: State, k: SkillId) => sLv(s, k) * SKILL_BONUS;
+export function skillLv(xp: number, max = SKILL_MAX) { let lv = 0, need = 3; while (lv < max && xp >= need) { xp -= need; lv++; need = 3 + lv; } return { lv, into: xp, need: lv >= max ? 0 : need }; }
+export const sLv = (s: State, k: SkillId) => skillLv(s.sk?.[k] || 0, skillMax(k)).lv;
+export const sBonus = (s: State, k: SkillId) => sLv(s, k) * skillPer(k);
 function gainSkills(s: State, g: Partial<Record<SkillId, number>>) {
   const ups: string[] = [];
   s.sk = { ...(s.sk || {}) };
@@ -270,7 +273,7 @@ export function act(prev: State, i: number): Result {
   if (!a) return { state: prev };
   const [label, mins, cost, eff0, kind, npc] = a;
   // 体能：所有掉精力的事少掉一点
-  const eff: Partial<Stats> = { ...eff0 }; if ((eff.energy || 0) < 0) eff.energy = (eff.energy || 0) * (1 - sBonus(prev, "fit"));
+  const eff: Partial<Stats> = { ...eff0 }; if ((eff.energy || 0) < 0) eff.energy = (eff.energy || 0) / (1 + sBonus(prev, "fit"));
   if (cost > 0 && prev.money < cost) return { state: prev, toast: "钞票不够" };
   const s = structuredClone(prev);
   let toast: string | undefined;
@@ -330,7 +333,7 @@ export function act(prev: State, i: number): Result {
   if (kind === "interview") {
     if (s.job === "engineer") return { state: prev, toast: "侬已经在张江上班了" };
     s.money -= cost; apply(s, eff); advance(s, mins);
-    if (s.energy >= 30 && s.fun >= 25 && Math.random() < 0.45 + sBonus(s, "pro")) { s.job = "engineer"; s.lv = 1; s.xp = 0; log(s, "面试通过！换工作当上了张江算法工程师，基本日薪¥560。"); toast = "面试通过，换新工作了！"; }
+    if (s.energy >= 30 && s.fun >= 25 && Math.random() < Math.min(0.95, 0.45 * (1 + sBonus(s, "pro")))) { s.job = "engineer"; s.lv = 1; s.xp = 0; log(s, "面试通过！换工作当上了张江算法工程师，基本日薪¥560。"); toast = "面试通过，换新工作了！"; }
     else log(s, "面试没过。HR 说再沉淀沉淀，状态好点再来。");
     check(s);
     return { state: s, toast, label };
