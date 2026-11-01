@@ -23,7 +23,7 @@ export default function Game() {
   const [sel, setSel] = useState<PlaceId | null>(null);
   const [cell, setCell] = useState<number | null>(null);
   const [i18nReady, setI18nReady] = useState(false);
-  const [panel, setPanel] = useState<"friends" | "log" | "help" | "chat" | "auth" | "skills" | "estates" | "money" | "admin" | "account" | null>(null);
+  const [panel, setPanel] = useState<"friends" | "log" | "help" | "chat" | "auth" | "skills" | "estates" | "money" | "admin" | "account" | "start" | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [others, setOthers] = useState<Record<string, Other>>({});
   const [chats, setChats] = useState<Chat[]>([]);
@@ -84,8 +84,9 @@ export default function Game() {
   }, [say]);
   useEffect(() => {
     if (user === undefined) return;
-    if (!user) { // 退出登录：回到游客存档
-      try { const x = JSON.parse(localStorage.getItem(LOCAL) || "null"); setS(isState(x) ? x : null); } catch { setS(null); }
+    if (!user) { // 没登录：有游客存档就接着玩，没有就打开登录注册
+      let x: unknown = null; try { x = JSON.parse(localStorage.getItem(LOCAL) || "null"); } catch {}
+      setS(isState(x) ? x : null); if (!isState(x)) setPanel("auth");
       return;
     }
     fetch("/api/game").then((r) => r.json() as Promise<any>).then(async (d) => {
@@ -93,7 +94,7 @@ export default function Game() {
       let local: unknown = null;
       try { local = JSON.parse(localStorage.getItem(LOCAL) || "null"); } catch {}
       if (isState(local)) { await api({ op: "import", save: local }); say("已导入游客存档，钱包从 ¥1,500 重新开始"); }
-      else setS(null);
+      else { setS(null); setPanel("start"); } // 有账号还没角色：弹出创建角色
     }).catch(() => {});
   }, [user, api, say]);
 
@@ -237,7 +238,7 @@ export default function Game() {
         <button className="pill" onClick={() => setPanel(panel === "help" ? null : "help")}>❓ 怎么玩</button>
       </nav>
 
-      <section ref={hudRef} className={s ? "hud" + (open ? "" : " folded") : "bottom"} onClick={() => { if (s && !open) setOpen(true); }}>{s ? (
+      {s && <section ref={hudRef} className={"hud" + (open ? "" : " folded")} onClick={() => { if (s && !open) setOpen(true); }}>{s ? (
         <>
           <div className="who" onClick={(e) => { e.stopPropagation(); setOpen(!open); }} role="button" aria-expanded={open} title={open ? "收起" : "展开"}>
             <b>{s.name}{s.gender ? ` ${s.gender === "m" ? "♂" : s.gender === "f" ? "♀" : ""}` : ""}{s.birth ? ` ${ageOf(s.birth)}岁` : ""} <span className="fold">{open ? "▴" : "▾"}</span></b>
@@ -253,7 +254,7 @@ export default function Game() {
           {(!s.gender || !s.birth) ? <ProfileFix onSave={(g, b) => { if (user) api({ op: "profile", gender: g, birth: b }); else setS({ ...s, gender: g, birth: b }); }} /> : <div className="last">{s.log[0]?.[1]}</div>}
           </>}
         </>
-      ) : <Start onStart={(n, j, g, b) => { if (user) api({ op: "new", name: n, job: j, gender: g, birth: b }); else setS(newGame(n, j, g, b)); setSel("hostel"); }} />}</section>
+      ) : null}</section>}
 
       {sel && (
         <aside className="sheet">
@@ -290,6 +291,7 @@ export default function Game() {
       {panel && (
         <aside className="panel">
           <button className="x" aria-label="关闭" onClick={() => setPanel(null)}>✕</button>
+          {panel === "start" && user && !s && <><h2>创建角色</h2><Start onStart={(n, j, g, b) => { api({ op: "new", name: n, job: j, gender: g, birth: b }); setPanel(null); setSel("hostel"); }} /></>}
           {panel === "auth" && <Auth xOn={xOn} onDone={(u) => { setUser(u); setPanel(null); say(`欢迎，${u.name}`); }} />}
           {panel === "estates" && <><h2>买地</h2><p className="muted">地图上淡黄的格子是住宅地，淡蓝的是商业地，都挨着某个地点；人到了那个地点就能买。价格看区和地段：市中心最贵，临江、挨着主干道、靠地铁更贵。住宅地每人最多 {MAX_HOUSES} 格（买了就能住，不交房租），商业地最多 2 格（盖店、挂招牌、雇人）。</p>
             {(() => { const mine = [...plots.filter((p) => p.mine).map((p) => ({ id: p.id, t: "🏠 我的房子" })), ...estates.filter((e) => e.mine).map((e) => ({ id: e.id, t: e.kind ? `${EKINDS[e.kind].ic}「${e.name}」` : "🏗️ 我的商业地" }))];
@@ -352,7 +354,7 @@ export default function Game() {
       )}
 
       <div className="zoom"><button aria-label="放大" onClick={() => city.current?.zoomBy(1.3)}>＋</button><button aria-label="缩小" onClick={() => city.current?.zoomBy(1 / 1.3)}>－</button></div>
-      {s && <ResetButton onReset={() => { setSel(null); if (user) api({ op: "reset" }); else { try { localStorage.removeItem(LOCAL); } catch {} setS(null); } }} />}
+      {s && <ResetButton onReset={() => { setSel(null); if (user) { api({ op: "reset" }); setPanel("start"); } else { try { localStorage.removeItem(LOCAL); } catch {} setS(null); setPanel("auth"); } }} />}
       {toast && <div className="toast" role="status">{toast}</div>}
     </>
   );
@@ -393,12 +395,15 @@ function Start({ onStart }: { onStart: (name: string, job: JobId, gender: Gender
 
 function Auth({ onDone, xOn }: { onDone: (u: User) => void; xOn: boolean }) {
   const [mode, setMode] = useState<"login" | "signup">("signup");
+  const [gender, setGender] = useState<Gender | null>(null);
+  const [birth, setBirth] = useState("2000-01-01");
+  const [job, setJob] = useState<JobId>(ENTRY_JOBS[0]);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const submit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault(); setErr(""); setBusy(true);
     const f = new FormData(e.currentTarget);
-    const r = await fetch(`/api/auth/${mode}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(Object.fromEntries(f)) }).catch(() => null);
+    const r = await fetch(`/api/auth/${mode}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...Object.fromEntries(f), gender, birth, job }) }).catch(() => null);
     setBusy(false);
     if (!r) return setErr("网络出错了，请稍后再试");
     const d = (await r.json()) as any;
@@ -408,11 +413,17 @@ function Auth({ onDone, xOn }: { onDone: (u: User) => void; xOn: boolean }) {
   return (
     <form className="auth" onSubmit={submit}>
       <div className="tabs"><button type="button" aria-pressed={mode === "signup"} onClick={() => setMode("signup")}>创建账号</button><button type="button" aria-pressed={mode === "login"} onClick={() => setMode("login")}>登录</button></div>
-      {mode === "signup" && <label>昵称<input name="name" id="au-name" maxLength={16} required placeholder="地图上显示的名字" /></label>}
+      {mode === "signup" && <label>昵称<input name="name" id="au-name" maxLength={12} required placeholder="也是你在游戏里的名字" /></label>}
       <label>邮箱<input name="email" id="au-email" type="email" required autoComplete="email" /></label>
       <label>密码<input name="password" id="au-pass" type="password" minLength={8} required autoComplete={mode === "login" ? "current-password" : "new-password"} placeholder="至少 8 位" /></label>
+      {mode === "signup" && <>
+        <div style={{ fontWeight: 700, marginTop: 4 }}>刚到上海：领¥{START_GRANT.toLocaleString()}落户补贴，先住青年旅舍，找份工作。</div>
+        <ProfileFields gender={gender} birth={birth} onGender={setGender} onBirth={setBirth} />
+        <div className="jobs">{ENTRY_JOBS.map((k) => <button type="button" key={k} aria-pressed={k === job} onClick={() => setJob(k)}>{JOBS[k].ic} {JOBS[k].title}<br /><span className="sub">日薪¥{JOBS[k].pay}</span></button>)}</div>
+        <p className="sub">好工作（咖啡师、销售、设计师、码农、算法工程师）要先练能力，再去那里应聘。</p>
+      </>}
       {err && <p className="err">{err}</p>}
-      <button className="big" disabled={busy}>{busy ? "请稍等…" : mode === "login" ? "登录" : "创建账号并开始"}</button>
+      <button className="big" disabled={busy || (mode === "signup" && (!gender || !birthOk(birth)))}>{busy ? "请稍等…" : mode === "login" ? "登录" : !gender ? "先选性别" : !birthOk(birth) ? "出生日期不对（要年满 16 岁）" : "创建账号并开始"}</button>
       {xOn && <a className="xbtn" href="/api/auth/x">用 𝕏 账号登录</a>}
       <p className="sub">注册即表示同意 <a href="/terms">用户协议</a> 和 <a href="/privacy">隐私政策</a>。</p>
     </form>

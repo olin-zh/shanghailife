@@ -172,3 +172,5 @@ a.xbtn{display:block;text-align:center;text-decoration:none;opacity:1}
 }
 
 .sheet{z-index:4}
+
+.panel{top:calc(var(--chips-b,92px) + 10px);max-height:calc(100vh - var(--chips-b,92px) - 30px);z-index:5}
