@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { PLACES, type PlaceId } from "./game";
 import { PLOT_COUNT, SUBURB, plotName, plotPos, type Plot } from "./plots";
 import { geo, HUANGPU, SUZHOU_CREEK } from "./geo";
+import { BOAT_COUNT, HUANGPU_BOATS, type Boat } from "./boats";
 
 export type Other = { id: string; name: string; at: PlaceId; color: number; act?: string };
 export type City = {
@@ -10,6 +11,7 @@ export type City = {
   setHere(id: PlaceId | null): void;
   setMine(id: PlaceId | null): void;
   setPlots(list: Plot[]): void;
+  setBoats(list: Boat[]): void;
   setPlayers(list: Other[]): void;
   bubble(id: string, text: string): void;
   focus(id: PlaceId): void;
@@ -17,7 +19,7 @@ export type City = {
   dispose(): void;
 };
 
-export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onPickPlayer: (id: string) => void): City {
+export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onPickPlayer: (id: string) => void, onPickBoat: (id: number) => void = () => {}): City {
   const canvas = document.createElement("canvas");
   canvas.className = "map";
   root.appendChild(canvas);
@@ -417,15 +419,65 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
   };
   const removeFig = (id: string) => { const f = figs.get(id); if (!f) return; scene.remove(f.obj); f.tag.remove(); f.bubble.remove(); figs.delete(id); };
 
+  /* ---- 游船和广告板 ---- */
+  type Path = { pts: number[][]; cum: number[]; len: number };
+  const mkPath = (pts: number[][]): Path => { const cum = [0]; for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1])); return { pts, cum, len: cum[cum.length - 1] }; };
+  const along = (p: Path, d: number) => {
+    let i = 1; while (i < p.pts.length - 1 && p.cum[i] < d) i++;
+    const a = p.pts[i - 1], b = p.pts[i], k = (d - p.cum[i - 1]) / (p.cum[i] - p.cum[i - 1] || 1);
+    const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1;
+    return { x: a[0] + dx * k, z: a[1] + dz * k, nx: -dz / l, nz: dx / l, ang: Math.atan2(dz, dx) };
+  };
+  // 黄浦江只用市区这一段（太远的上下游船开过去也看不到）
+  const hpPath = mkPath(riverPts.slice(1, 16)), ckPath = mkPath(creekPts.slice(1));
+  const adCanvas = document.createElement("canvas"); adCanvas.width = 256; adCanvas.height = 128;
+  { const c = adCanvas.getContext("2d")!; c.fillStyle = "#f6f3ea"; c.fillRect(0, 0, 256, 128); c.strokeStyle = "#c4472f"; c.lineWidth = 8; c.strokeRect(4, 4, 248, 120);
+    c.fillStyle = "#c4472f"; c.font = "bold 34px sans-serif"; c.textAlign = "center"; c.fillText("广告位招租", 128, 62); c.fillStyle = "#5d6b63"; c.font = "22px sans-serif"; c.fillText("点我上传图片", 128, 98); }
+  const adFree = new THREE.CanvasTexture(adCanvas); adFree.colorSpace = THREE.SRGBColorSpace;
+  const freeMat = new THREE.MeshBasicMaterial({ map: adFree, side: THREE.DoubleSide });
+  const loader = new THREE.TextureLoader();
+  type B = { hull: THREE.Group; board: THREE.Group; face: THREE.Mesh; path: Path; d: number; dir: number; lane: number; sp: number; ver: number; tex: THREE.Texture | null };
+  const boats: B[] = []; const pickables: THREE.Object3D[] = [];
+  const hullColors = [0xf3f1ea, 0xe9c44c, 0x2f86c9, 0xc4472f, 0x4aa65a];
+  for (let i = 0; i < BOAT_COUNT; i++) {
+    const big = i < HUANGPU_BOATS, path = big ? hpPath : ckPath, sc = big ? 1 : 0.6;
+    const hull = new THREE.Group();
+    box(2.8 * sc, 0.5 * sc, 1.1 * sc, M(hullColors[i % hullColors.length]), 0, 0, 0, hull); box(1.4 * sc, 0.5 * sc, 0.9 * sc, mats.white, -0.2 * sc, 0.5 * sc, 0, hull);
+    const board = new THREE.Group(); const bw = 2.6 * sc, bh = 1.3 * sc;
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(bw + 0.16, bh + 0.16, 0.06), mats.dk); board.add(frame);
+    const face = new THREE.Mesh(new THREE.PlaneGeometry(bw, bh), freeMat); face.position.z = 0.04; board.add(face);
+    const pole = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.9 * sc, 0.08), mats.dk); pole.position.y = -(bh / 2 + 0.45 * sc); board.add(pole);
+    scene.add(hull); scene.add(board);
+    hull.traverse((o) => (o.userData.boatId = i)); board.traverse((o) => (o.userData.boatId = i)); pickables.push(hull, board);
+    const dir = big ? (i % 2 ? 1 : -1) : i % 2 ? 1 : -1;
+    boats.push({ hull, board, face, path, d: ((i * 0.6180339) % 1) * path.len, dir, lane: big ? dir * 1.5 : 0, sp: (big ? 0.012 : 0.008) * (0.7 + ((i * 37) % 10) / 20), ver: 0, tex: null });
+  }
+  const moveBoats = (dt: number) => {
+    boats.forEach((b) => {
+      b.d += b.sp * b.dir * dt;
+      if (b.d > b.path.len) { b.d = b.path.len; b.dir = -1; } if (b.d < 0) { b.d = 0; b.dir = 1; }
+      const p = along(b.path, b.d), lane = b.path === hpPath ? b.dir * 1.5 : 0;
+      b.hull.position.set(p.x + p.nx * lane, 0.1, p.z + p.nz * lane); b.hull.rotation.y = -p.ang + (b.dir < 0 ? Math.PI : 0);
+      b.board.position.set(b.hull.position.x, b.path === hpPath ? 2.4 : 1.5, b.hull.position.z); b.board.quaternion.copy(cam.quaternion);
+    });
+  };
+  const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+  const pickBoat = (cx: number, cy: number) => {
+    const r = canvas.getBoundingClientRect(); ndc.set(((cx - r.left) / r.width) * 2 - 1, -((cy - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(ndc, cam); const hit = ray.intersectObjects(pickables, true)[0];
+    if (hit) onPickBoat(hit.object.userData.boatId as number);
+  };
+
   /* ---- 拖动和缩放 ---- */
   let drag: { x: number; y: number; t: THREE.Vector3 } | null = null;
-  canvas.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, y: e.clientY, t: target.clone() }; canvas.setPointerCapture(e.pointerId); });
+  let downAt: { x: number; y: number } | null = null;
+  canvas.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, y: e.clientY, t: target.clone() }; downAt = { x: e.clientX, y: e.clientY }; canvas.setPointerCapture(e.pointerId); });
   canvas.addEventListener("pointermove", (e) => {
     if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y; const s = (cam.right - cam.left) / root.clientWidth;
     target.copy(drag.t).addScaledVector(new THREE.Vector3(1, 0, -1).normalize(), -dx * s).addScaledVector(new THREE.Vector3(1, 0, 1).normalize(), -dy * s * 1.35);
     target.x = Math.max(-150, Math.min(230, target.x)); target.z = Math.max(-95, Math.min(200, target.z)); placeCam();
   });
-  canvas.addEventListener("pointerup", () => (drag = null));
+  canvas.addEventListener("pointerup", (e) => { drag = null; if (downAt && Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) < 6) pickBoat(e.clientX, e.clientY); downAt = null; });
   const setZoom = (z: number) => { zoom = Math.max(0.6, Math.min(3, z)); resize(); };
   canvas.addEventListener("wheel", (e) => { e.preventDefault(); setZoom(zoom * (e.deltaY < 0 ? 1.12 : 0.89)); }, { passive: false });
   let pinch: number | null = null;
@@ -441,7 +493,7 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
     el.style.visibility = sx < -60 || sx > w + 60 || sy < -60 || sy > h + 60 ? "hidden" : "visible";
   };
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  let raf = 0, t0 = 0;
+  let raf = 0, t0 = 0, t0b = 0;
   const frame = (t: number) => {
     const dt = Math.min(50, t - t0) / 16; t0 = t;
     if (!reduce) {
@@ -464,6 +516,7 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
       project(f.tag, f.pos.x, 2.6, f.pos.z);
       if (!f.bubble.hidden) { if (now > f.bubbleUntil) f.bubble.hidden = true; else project(f.bubble, f.pos.x, 3.6, f.pos.z); }
     });
+    if (!reduce) moveBoats(dt); else if (!t0b) { moveBoats(0); t0b = 1; }
     renderer.render(scene, cam);
     labels.forEach((el) => project(el, +el.dataset.x!, 0.2, +el.dataset.z!, "-50%,-50%"));
     (Object.keys(pins) as PlaceId[]).forEach((k) => project(pins[k], PLACES[k].x, PLACES[k].h, PLACES[k].z));
@@ -474,6 +527,18 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
 
   return {
     setSelected(id) { (Object.keys(pins) as PlaceId[]).forEach((k) => pins[k].classList.toggle("sel", k === id)); },
+    setBoats(list) {
+      list.forEach((b) => {
+        const B = boats[b.id]; if (!B || B.ver === b.version) return;
+        B.ver = b.version; B.tex?.dispose(); B.tex = null;
+        if (!b.version) { B.face.material = freeMat; return; }
+        const ver = b.version;
+        loader.load(`/api/boats/${b.id}/image?v=${ver}`, (tex) => {
+          if (B.ver !== ver) { tex.dispose(); return; }
+          tex.colorSpace = THREE.SRGBColorSpace; B.tex = tex; B.face.material = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide });
+        }, undefined, () => { B.face.material = freeMat; });
+      });
+    },
     setPlots(list) {
       list.forEach((p) => {
         const L = lots[p.id]; if (!L) return;

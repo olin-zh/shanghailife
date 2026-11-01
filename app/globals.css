@@ -111,3 +111,10 @@ a.xbtn{display:block;text-align:center;text-decoration:none;opacity:1}
 .lotbtn.mine{background:#fdeee9;border-color:var(--red)}
 .plots{display:grid;gap:8px}
 .row2{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.lightbox{position:fixed;inset:0;background:rgba(15,25,20,.55);display:grid;place-items:center;z-index:8;padding:16px}
+.lbcard{position:relative;width:min(560px,100%);max-height:calc(100vh - 32px);overflow:auto;background:var(--card);border-radius:20px;padding:18px;display:grid;gap:10px;box-shadow:0 10px 40px rgba(0,0,0,.3)}
+.lbcard h2{margin:0;font-size:17px}
+.lbcard input{width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:12px;font:inherit}
+.adimg{width:100%;aspect-ratio:2/1;object-fit:cover;border-radius:12px;background:#eef1ee;display:block}
+.adfree{aspect-ratio:2/1;border:3px dashed var(--red);border-radius:12px;display:grid;place-items:center;color:var(--red);font-weight:700;font-size:22px}
+.filebtn{cursor:pointer;display:inline-block}

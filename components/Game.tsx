@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createCity, type City, type Other } from "../lib/city";
 import { plotName, type Plot } from "../lib/plots";
+import { AD_DAYS, AD_PRICE, boatName, type Boat } from "../lib/boats";
 import { actsAt, homeOf, isHome, HOMES, GIFT_AMOUNTS, JOBS, NPCS, PLACES, act, clock, coopable, isState, mood, newGame, travel, trip, type JobId, type PlaceId, type State } from "../lib/game";
 
 type User = { id: string; email: string; name: string };
@@ -25,6 +26,10 @@ export default function Game() {
   const [peer, setPeer] = useState<string | null>(null);
   const [xOn, setXOn] = useState(false);
   const [plots, setPlots] = useState<Plot[]>([]);
+  const [boats, setBoats] = useState<Boat[]>([]);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [boatSel, setBoatSel] = useState<number | null>(null);
+  const loadBoats = useCallback(() => { fetch("/api/boats").then((r) => r.json() as Promise<any>).then((d) => { if (Array.isArray(d.boats)) { setBoats(d.boats); setIsAdmin(!!d.admin); } }).catch(() => {}); }, []);
   const [sellAsk, setSellAsk] = useState(false);
   const loadPlots = useCallback(() => { fetch("/api/plots").then((r) => r.json() as Promise<any>).then((d) => { if (Array.isArray(d.plots)) setPlots(d.plots); }).catch(() => {}); }, []);
   const [offer, setOffer] = useState<Offer | null>(null);
@@ -35,7 +40,7 @@ export default function Game() {
   // 地图
   useEffect(() => {
     if (!mapRef.current) return;
-    city.current = createCity(mapRef.current, (id) => { setSel(id); setPeer(null); city.current?.focus(id); }, (id) => { setPeer(id); setSel(null); });
+    city.current = createCity(mapRef.current, (id) => { setSel(id); setPeer(null); city.current?.focus(id); }, (id) => { setPeer(id); setSel(null); }, (id) => { setBoatSel(id); });
     return () => city.current?.dispose();
   }, [say]);
 
@@ -77,6 +82,13 @@ export default function Game() {
   // 地块：进来先拉一次，之后每 20 秒刷新，看看别人买了哪块
   useEffect(() => { loadPlots(); const h = setInterval(loadPlots, 20000); return () => clearInterval(h); }, [loadPlots, user]);
   useEffect(() => { city.current?.setPlots(plots); }, [plots]);
+  useEffect(() => { loadBoats(); const h = setInterval(loadBoats, 30000); return () => clearInterval(h); }, [loadBoats, user]);
+  useEffect(() => { city.current?.setBoats(boats); }, [boats]);
+  // 分享链接 …/#boat-12 直接打开那艘船的广告
+  useEffect(() => {
+    const open = () => { const m = location.hash.match(/^#boat-(\d+)$/); if (m) setBoatSel(Math.min(149, Number(m[1]) - 1)); };
+    open(); addEventListener("hashchange", open); return () => removeEventListener("hashchange", open);
+  }, []);
 
   // 游客存档只存在本地浏览器
   useEffect(() => {
@@ -245,6 +257,12 @@ export default function Game() {
         </aside>
       )}
 
+      {boatSel != null && boats[boatSel] && (
+        <BoatView boat={boats[boatSel]} user={user} hasGame={!!s} money={s?.money ?? 0} admin={isAdmin} onClose={() => setBoatSel(null)}
+          onDone={(d) => { if (d.state !== undefined) setS(isState(d.state) ? d.state : null); if (d.toast) say(d.toast); if (d.error) say(d.error); loadBoats(); }}
+          onLogin={() => { setBoatSel(null); setPanel("auth"); }} />
+      )}
+
       {offer && (
         <div className="offer" role="dialog" aria-label="邀请">
           <p>{offer.kind === "gift" ? <>🧧 <b>{offer.name}</b> 给侬发了一个 <b>¥{offer.amount}</b> 红包</> : <>🤝 <b>{offer.name}</b> 邀请侬一起<b>{offer.label}</b></>}</p>
@@ -326,4 +344,75 @@ function ResetButton({ onReset }: { onReset: () => void }) {
   const [c, setC] = useState(false);
   useEffect(() => { if (!c) return; const h = setTimeout(() => setC(false), 3000); return () => clearTimeout(h); }, [c]);
   return <button className="reset pill" onClick={() => (c ? (onReset(), setC(false)) : setC(true))}>{c ? "再点一次确认重新开始" : "重新开始"}</button>;
+}
+
+// 把图片缩放裁成 2:1 的 JPEG（最大 640×320），顺便去掉照片里的定位等信息
+async function toAdJpeg(file: File): Promise<Blob> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => bad(new Error("读不了这张图片")); i.src = url; });
+    const W = 640, H = 320, c = document.createElement("canvas"); c.width = W; c.height = H;
+    const g = c.getContext("2d")!; g.fillStyle = "#fff"; g.fillRect(0, 0, W, H);
+    const k = Math.max(W / img.width, H / img.height), w = img.width * k, h = img.height * k;
+    g.drawImage(img, (W - w) / 2, (H - h) / 2, w, h);
+    for (const q of [0.86, 0.75, 0.6, 0.45]) { const b = await new Promise<Blob | null>((ok) => c.toBlob(ok, "image/jpeg", q)); if (b && b.size <= 290 * 1024) return b; }
+    throw new Error("图片压缩后还是太大");
+  } finally { URL.revokeObjectURL(url); }
+}
+
+function BoatView({ boat, user, hasGame, money, admin, onClose, onDone, onLogin }: {
+  boat: Boat; user: User | null | undefined; hasGame: boolean; money: number; admin: boolean;
+  onClose: () => void; onDone: (d: any) => void; onLogin: () => void;
+}) {
+  const [file, setFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [caption, setCaption] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [confirmDel, setConfirmDel] = useState(false);
+  const live = !!boat.ownerName;
+  useEffect(() => { if (!file) { setPreview(null); return; } const u = URL.createObjectURL(file); setPreview(u); return () => URL.revokeObjectURL(u); }, [file]);
+  const daysLeft = boat.expiresAt ? Math.max(0, Math.ceil((boat.expiresAt - Date.now()) / 86400000)) : 0;
+  const upload = async () => {
+    if (!file) return;
+    setBusy(true);
+    try {
+      const blob = await toAdJpeg(file);
+      const r = await fetch(`/api/boats/${boat.id}?caption=${encodeURIComponent(caption)}`, { method: "POST", headers: { "content-type": "image/jpeg" }, body: blob });
+      const d = await r.json().catch(() => ({ error: "上传失败" }));
+      onDone(d); if (r.ok) { setFile(null); setCaption(""); }
+    } catch (e) { onDone({ error: (e as Error).message }); }
+    setBusy(false);
+  };
+  const call = async (url: string, method: string) => { setBusy(true); const r = await fetch(url, { method }).catch(() => null); onDone(r ? await r.json().catch(() => ({})) : { error: "网络出错了" }); setBusy(false); };
+  return (
+    <div className="lightbox" role="dialog" aria-label={boatName(boat.id)} onClick={onClose}>
+      <div className="lbcard" onClick={(e) => e.stopPropagation()}>
+        <button className="x" aria-label="关闭" onClick={onClose}>✕</button>
+        <h2>🚢 {boatName(boat.id)}</h2>
+        {live ? <>
+          <img className="adimg" src={`/api/boats/${boat.id}/image?v=${boat.version}`} alt={boat.caption || `${boat.ownerName}的广告`} />
+          <p className="sub">{boat.ownerName} 的广告{boat.caption ? ` · ${boat.caption}` : ""} · 还剩 {daysLeft} 天</p>
+          <div className="row2">
+            {boat.mine && <label className="btn ghost filebtn">换一张图<input type="file" accept="image/*" hidden onChange={(e) => setFile(e.target.files?.[0] ?? null)} /></label>}
+            {(boat.mine || admin) && (confirmDel
+              ? <><span className="sub">确定撤下？费用不退。</span><button className="btn ghost" onClick={() => setConfirmDel(false)}>算了</button><button className="btn primary" disabled={busy} onClick={() => call(`/api/boats/${boat.id}`, "DELETE")}>撤下</button></>
+              : <button className="btn ghost" onClick={() => setConfirmDel(true)}>{admin && !boat.mine ? "管理员下架" : "撤下广告"}</button>)}
+            {!boat.mine && user && <button className="link" disabled={busy} onClick={() => call(`/api/boats/${boat.id}/report`, "POST")}>举报这张图</button>}
+          </div>
+        </> : <>
+          <div className="adfree">广告位招租</div>
+          <p className="sub">上传一张图片，挂在这艘船的广告牌上 {AD_DAYS} 天，全城玩家都看得到。¥{AD_PRICE.toLocaleString()} 游戏币，每人最多同时 3 艘。图片会被裁成 2:1。</p>
+          {!user ? <button className="big" onClick={onLogin}>登录后租船</button>
+            : !hasGame ? <p className="sub">先开始游戏才能租船。</p>
+            : <label className="btn ghost filebtn">选择图片<input type="file" accept="image/*" hidden onChange={(e) => setFile(e.target.files?.[0] ?? null)} /></label>}
+        </>}
+        {file && <>
+          {preview && <img className="adimg" src={preview} alt="预览" />}
+          <input id="ad-caption" value={caption} maxLength={40} onChange={(e) => setCaption(e.target.value)} placeholder="一句话说明（选填）" />
+          <p className="sub">请勿上传色情、暴力、侵权或违法内容；被 3 位玩家举报会自动隐藏。</p>
+          <button className="big" disabled={busy || (!live && money < AD_PRICE)} onClick={upload}>{busy ? "上传中…" : live ? "换上这张图" : money < AD_PRICE ? `钞票不够（要¥${AD_PRICE.toLocaleString()}）` : `付¥${AD_PRICE.toLocaleString()} 挂上去`}</button>
+        </>}
+      </div>
+    </div>
+  );
 }
