@@ -11,6 +11,8 @@ export type State = Stats & {
   home?: HomeId; // 租住的地方，没有就是亭子间
   rentDay?: number; // 下次交房租的日子
   ownPlot?: number; // 在松江新城买下的地块编号
+  lv?: number; xp?: number; // 当前职业的等级（1–5）和经验
+  costDay?: number; // 下次结算一周生活开销的日子
 };
 
 // 可以租住的房子：每处都是地图上的一个地点
@@ -22,6 +24,37 @@ export const HOMES: Record<HomeId, { rent: number; perk: Partial<Stats>; note: s
   yangfang: { rent: 20000, perk: { energy: 12, fun: 15, social: 5 }, note: "带小花园的老洋房，朋友都想来坐坐" },
   sjxc: { rent: 0, perk: { energy: 15, fun: 12, social: 3 }, note: "自己买的房子，不用交房租，就是离市区远" },
 };
+/* ---------- 职业成长 ---------- */
+export const LEVELS: Record<JobId, string[]> = {
+  coder: ["初级码农", "码农", "高级工程师", "技术专家", "技术总监"],
+  barista: ["实习咖啡师", "咖啡师", "首席咖啡师", "店长", "区域经理"],
+  designer: ["设计助理", "设计师", "资深设计师", "设计主管", "创意总监"],
+  engineer: ["算法工程师", "高级算法工程师", "算法专家", "首席科学家", "研究院院长"],
+};
+export const LV_XP = [0, 10, 28, 55, 95]; // 升到第 n 级需要的累计经验
+export const PAY_MULT = [1, 1.2, 1.45, 1.75, 2.1];
+export const lvOf = (s: State) => s.lv || 1;
+export const jobTitle = (s: State) => `${PLACES[JOBS[s.job].place].name.slice(0, 3)} · ${LEVELS[s.job][lvOf(s) - 1]}`;
+export const basePay = (s: State) => Math.round(JOBS[s.job].pay * PAY_MULT[lvOf(s) - 1]);
+export const weeklyCost = (s: State) => 280 + (lvOf(s) - 1) * 210; // 手机话费、水电、聚餐……级别越高花得越多
+export function nextLvXp(s: State) { const l = lvOf(s); return l >= 5 ? null : LV_XP[l]; }
+
+/* ---------- 副业零工：[地点] → 列表；时段用 24 小时制，可以跨午夜 ---------- */
+type Gig = { label: string; mins: number; cost: number; from: number; to: number; pay: [number, number]; eff: Partial<Stats>; peak?: [number, number][]; note?: string };
+export const GIGS: Partial<Record<PlaceId, Gig[]>> = {
+  njl: [{ label: "送外卖", mins: 120, cost: 0, from: 10, to: 22, pay: [70, 120], eff: { energy: -15, hunger: -10 }, peak: [[11, 13], [17, 20]], note: "饭点单多" }],
+  chp: [{ label: "夜市摆摊卖小吃", mins: 180, cost: 60, from: 18, to: 23, pay: [60, 330], eff: { energy: -15, social: 6 }, note: "要先进¥60的货，生意看运气" }],
+  wjc: [{ label: "给学生当家教", mins: 120, cost: 0, from: 16, to: 21, pay: [180, 220], eff: { energy: -10, social: 5 } }],
+  pvg: [{ label: "开网约车接机", mins: 150, cost: 30, from: 6, to: 24, pay: [180, 300], eff: { energy: -20 }, note: "油费¥30" }],
+  sha: [{ label: "开网约车接机", mins: 120, cost: 25, from: 6, to: 24, pay: [140, 240], eff: { energy: -18 }, note: "油费¥25" }],
+  bund: [{ label: "给游客拍照", mins: 60, cost: 0, from: 9, to: 22, pay: [20, 130], eff: { fun: 5, energy: -5 }, peak: [[18, 22]], note: "晚上看夜景的人多" }],
+  xtd: [{ label: "酒吧兼职调酒", mins: 240, cost: 0, from: 20, to: 2, pay: [240, 300], eff: { energy: -25, social: 10 } }],
+  ljz: [{ label: "写字楼送咖啡跑腿", mins: 60, cost: 0, from: 8, to: 18, pay: [45, 70], eff: { energy: -8 }, peak: [[8, 10]] }],
+};
+const inHours = (h: number, a: number, b: number) => (a <= b ? h >= a && h < b : h >= a || h < b);
+const rainy = (s: State) => s.month >= 6 && s.month <= 7;
+export function gigHint(g: Gig) { return `${g.from}–${g.to === 24 ? 24 : g.to}点 · ¥${g.pay[0]}–${g.pay[1]}${g.note ? ` · ${g.note}` : ""}`; }
+
 export const isHome = (p: PlaceId): p is HomeId => p in HOMES;
 export const homeOf = (s: State): HomeId => s.home || "home";
 
@@ -72,15 +105,15 @@ export const NPCS: Record<string, { name: string; line: string }> = {
   mama: { name: "相亲角李妈妈", line: "“侬有房伐？有户口伐？”" },
 };
 
-type Act = [label: string, mins: number, cost: number, eff: Partial<Stats>, kind?: "work" | "interview" | "rent" | "movein" | "trip" | null, npc?: string];
+type Act = [label: string, mins: number, cost: number, eff: Partial<Stats>, kind?: "work" | "overtime" | "gig" | "interview" | "rent" | "movein" | "trip" | null, npc?: string];
 const HOME_ACTS: Act[] = [["困觉（睡一觉）", 480, 0, { energy: 70, hunger: -25 }], ["刷手机", 60, 0, { fun: 15, energy: -5 }], ["外卖点一份炸猪排", 40, 38, { hunger: 45 }]];
 export const ACTS: Record<PlaceId, Act[]> = {
   gongfang: HOME_ACTS, jiangjing: HOME_ACTS, yangfang: HOME_ACTS, sjxc: HOME_ACTS,
   home: [["困觉（睡一觉）", 480, 0, { energy: 70, hunger: -25 }], ["吃王阿姨的菜泡饭", 30, 0, { hunger: 35, social: 5 }, null, "ayi"], ["刷手机", 60, 0, { fun: 15, energy: -5 }], ["外卖点一份炸猪排", 40, 38, { hunger: 45 }]],
   metro: [["在站台等下一班", 20, 0, { fun: -3 }], ["便利店买杯豆浆", 10, 6, { hunger: 10, energy: 3 }]],
-  ljz: [["上班", 480, 0, { energy: -35, hunger: -25, fun: -15 }, "work"], ["去楼下买饭团", 15, 9, { hunger: 20 }], ["和同事吐槽老板", 30, 0, { fun: 10, social: 10 }]],
-  wk: [["上班（咖啡师）", 480, 0, { energy: -30, hunger: -20, fun: -5 }, "work"], ["买杯拿铁坐一下午", 120, 36, { fun: 22, energy: 8 }], ["扫街拍梧桐", 60, 0, { fun: 15 }, null, "lily"]],
-  tzf: [["上班（设计师）", 480, 0, { energy: -30, hunger: -20, fun: -8 }, "work"], ["逛小店", 60, 30, { fun: 18 }]],
+  ljz: [["去楼下买饭团", 15, 9, { hunger: 20 }], ["和同事吐槽老板", 30, 0, { fun: 10, social: 10 }]],
+  wk: [["买杯拿铁坐一下午", 120, 36, { fun: 22, energy: 8 }], ["扫街拍梧桐", 60, 0, { fun: 15 }, null, "lily"]],
+  tzf: [["逛小店", 60, 30, { fun: 18 }]],
   chp: [["吃生煎和小馄饨", 40, 28, { hunger: 50, fun: 5 }, null, "yeshu"], ["排队买南翔小笼", 90, 45, { hunger: 55, fun: -5 }]],
   bund: [["江边看夜景", 60, 0, { fun: 25, energy: -5 }], ["和朋友散步", 90, 0, { fun: 20, social: 15 }, null, "any"]],
   rmgy: [["看相亲角的简历", 45, 0, { fun: 12 }, null, "mama"], ["被阿姨盘问家底", 30, 0, { fun: -10, social: 12 }, null, "mama"]],
@@ -102,6 +135,16 @@ export const ACTS: Record<PlaceId, Act[]> = {
 
 // 在某处能做的事：住的地方能睡觉；没住的房子只能看房、租下
 export function actsAt(s: State | null, at: PlaceId): Act[] {
+  const extra: Act[] = [];
+  if (s && JOBS[s.job].place === at) {
+    const p = basePay(s);
+    extra.push([`上班（日薪约¥${p}）`, 480, 0, { energy: -32, hunger: -22, fun: -10 }, "work"], [`上班+加班（约¥${Math.round(p * 1.5)}）`, 720, 0, { energy: -55, hunger: -32, fun: -22 }, "overtime"]);
+  }
+  (GIGS[at] || []).forEach((g, k) => extra.push([`副业：${g.label}`, g.mins, g.cost, g.eff, "gig", `${at}:${k}`]));
+  const base = actsAtBase(s, at);
+  return extra.length ? [...extra, ...base] : base;
+}
+function actsAtBase(s: State | null, at: PlaceId): Act[] {
   if (at === "sjxc" && s && homeOf(s) !== "sjxc") {
     return s.ownPlot != null ? [["搬进自己的房子", 120, 0, { fun: 15 }, "movein"], ["去自家地块转转", 30, 0, { fun: 6 }]] : [["看看样板房", 30, 0, { fun: 5 }], ["湖边散步", 45, 0, { fun: 10, energy: -3 }]];
   }
@@ -141,6 +184,10 @@ function advance(s: State, mins: number) {
   s.hunger = clamp(s.hunger - h * 3);
   s.energy = clamp(s.energy - h * 1.5);
   if (s.day !== before) {
+    if (s.day >= (s.costDay ?? 8)) {
+      const c = weeklyCost(s); s.money -= c; s.costDay = s.day + 7;
+      log(s, `这周生活开销（话费、水电、日用品）¥${c}。`);
+    }
     if (homeOf(s) !== "sjxc" && s.day >= (s.rentDay ?? 31)) {
       const rent = HOMES[homeOf(s)].rent; s.money -= rent; s.rentDay = s.day + 30;
       log(s, `交房租¥${rent.toLocaleString()}。上海居，大不易。`);
@@ -189,12 +236,42 @@ export function act(prev: State, i: number): Result {
   if (cost > 0 && prev.money < cost) return { state: prev, toast: "钞票不够" };
   const s = structuredClone(prev);
   let toast: string | undefined;
-  if (kind === "work") {
-    const job = JOBS[s.job];
-    if (job.place !== s.at) return { state: prev, toast: `侬不在这里上班，侬是${job.title}` };
+  if (kind === "work" || kind === "overtime") {
+    if (JOBS[s.job].place !== s.at) return { state: prev, toast: `侬不在这里上班` };
     if (s.worked[s.day]) return { state: prev, toast: "今天已经上过班了" };
-    if (s.energy < 25) return { state: prev, toast: "太累了，先回去困一觉" };
-    s.worked[s.day] = 1; s.money += job.pay; log(s, `上了一天班，赚了¥${job.pay}。`);
+    if (s.energy < (kind === "overtime" ? 45 : 25)) return { state: prev, toast: kind === "overtime" ? "这点精力加不动班了" : "太累了，先回去困一觉" };
+    // 绩效：精力和开心都好就有奖金，状态差容易出错
+    const form = (s.energy + s.fun) / 2;
+    let pay = basePay(s) * (kind === "overtime" ? 1.5 : 1), note = "";
+    if (form >= 70) { pay *= 1.2; note = "状态好，拿了绩效奖金"; } else if (form < 35) { pay *= 0.6; note = "状态太差出了错，被扣了钱"; }
+    pay = Math.round(pay);
+    s.worked[s.day] = 1; s.money += pay;
+    const gain = (kind === "overtime" ? 2 : 1) + (form >= 70 ? 1 : 0);
+    s.xp = (s.xp || 0) + gain;
+    log(s, `${kind === "overtime" ? "上班加班到很晚" : "上了一天班"}，赚了¥${pay}${note ? `，${note}` : ""}。经验+${gain}。`);
+    const need = nextLvXp(s);
+    if (need != null && s.xp >= need) {
+      s.lv = lvOf(s) + 1;
+      log(s, `升职了！现在是${LEVELS[s.job][s.lv - 1]}，基本日薪涨到¥${basePay(s)}。`);
+      toast = `升职加薪！成为${LEVELS[s.job][s.lv - 1]} 🎉`;
+    }
+  }
+  if (kind === "gig") {
+    const [pl, k] = String(npc).split(":"); const g = GIGS[pl as PlaceId]?.[Number(k)];
+    if (!g) return { state: prev };
+    const h = Math.floor(s.min / 60);
+    if (!inHours(h, g.from, g.to)) return { state: prev, toast: `现在没这个活，${g.from}点到${g.to}点才有` };
+    if (s.energy < 15) return { state: prev, toast: "太累了，干不动了" };
+    let pay = g.pay[0] + Math.random() * (g.pay[1] - g.pay[0]);
+    let note = "";
+    if (g.peak?.some(([a, b]) => inHours(h, a, b))) { pay *= 1.5; note = "正赶上高峰"; }
+    if (pl === "njl" && rainy(s) && Math.random() < 0.5) { pay *= 1.4; note = "下雨天单价高"; }
+    if (pl === "chp" && rainy(s) && Math.random() < 0.5) { pay *= 0.4; note = "下雨没什么人"; }
+    pay = Math.round(pay);
+    s.money += pay - cost; apply(s, eff); advance(s, mins);
+    log(s, `${g.label}，${cost ? `扣掉成本¥${cost}，` : ""}赚了¥${pay}${note ? `（${note}）` : ""}。`);
+    check(s);
+    return { state: s, toast: `${g.label}赚了¥${pay}`, label: g.label };
   }
   if (kind === "movein") {
     s.home = "sjxc"; s.rentDay = undefined; advance(s, mins); apply(s, eff);
@@ -212,7 +289,7 @@ export function act(prev: State, i: number): Result {
   if (kind === "interview") {
     if (s.job === "engineer") return { state: prev, toast: "侬已经在张江上班了" };
     s.money -= cost; apply(s, eff); advance(s, mins);
-    if (s.energy >= 30 && s.fun >= 25 && Math.random() < 0.45) { s.job = "engineer"; log(s, "面试通过！换工作当上了张江算法工程师，日薪¥560。"); toast = "面试通过，换新工作了！"; }
+    if (s.energy >= 30 && s.fun >= 25 && Math.random() < 0.45) { s.job = "engineer"; s.lv = 1; s.xp = 0; log(s, "面试通过！换工作当上了张江算法工程师，基本日薪¥560。"); toast = "面试通过，换新工作了！"; }
     else log(s, "面试没过。HR 说再沉淀沉淀，状态好点再来。");
     check(s);
     return { state: s, toast, label };
@@ -228,7 +305,7 @@ export function act(prev: State, i: number): Result {
       if (s.friends[npc] >= 60 && !s.flags["f_" + npc]) { s.flags["f_" + npc] = 1; toast = `侬和${n.name}成了好朋友！`; }
     }
   }
-  if (kind !== "work") log(s, `${label}${cost ? `，花了¥${cost}` : ""}。`);
+  if (kind !== "work" && kind !== "overtime") log(s, `${label}${cost ? `，花了¥${cost}` : ""}。`);
   check(s);
   return { state: s, toast, label };
 }
@@ -253,10 +330,13 @@ export function receiveGift(prev: State, amount: number, fromName: string): Resu
 
 // 合作活动：照常做这件事，另外多加社交和开心，并记下这位玩家朋友
 export function coop(prev: State, i: number, partnerId: string, partnerName: string): Result {
-  const a = actsAt(prev, prev.at)[i];
+  // i 是公共活动列表 ACTS[地点] 里的序号；每个人自己的列表前面还有上班、副业，所以按名字找
+  const a = ACTS[prev.at][i];
   if (!a || a[4] || isHome(prev.at)) return { state: prev, toast: "这件事没法一起做" };
   if (a[2] > 0 && prev.money < a[2]) return { state: prev, toast: "钞票不够" };
-  const r = act(prev, i);
+  const mine = actsAt(prev, prev.at).findIndex((x) => x[0] === a[0]);
+  if (mine < 0) return { state: prev, toast: "这件事没法一起做" };
+  const r = act(prev, mine);
   const s = r.state;
   s.social = clamp(s.social + 15); s.fun = clamp(s.fun + 5);
   s.pals = { ...(s.pals || {}) };

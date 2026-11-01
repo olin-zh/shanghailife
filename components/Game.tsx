@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createCity, type City, type Other } from "../lib/city";
 import { plotName, type Plot } from "../lib/plots";
 import { AD_DAYS, AD_PRICE, BOAT_COUNT, boatName, type Boat } from "../lib/boats";
-import { actsAt, homeOf, isHome, HOMES, GIFT_AMOUNTS, JOBS, NPCS, PLACES, act, clock, coopable, isState, mood, newGame, travel, trip, type JobId, type PlaceId, type State } from "../lib/game";
+import { actsAt, homeOf, isHome, HOMES, GIGS, gigHint, jobTitle, lvOf, nextLvXp, LV_XP, weeklyCost, GIFT_AMOUNTS, JOBS, NPCS, PLACES, act, clock, coopable, isState, mood, newGame, travel, trip, type JobId, type PlaceId, type State } from "../lib/game";
 
 type User = { id: string; email: string; name: string };
 type Chat = { id: string; name: string; at: PlaceId; text: string; ts: number };
@@ -184,7 +184,12 @@ export default function Game() {
 
       <section className="bottom">{s ? (
         <>
-          <div className="who"><b>{s.name} · {JOBS[s.job].title}</b><span className="money" style={{ color: s.money < 0 ? "var(--red)" : undefined }}>¥{s.money.toLocaleString()}</span></div>
+          <div className="who"><b>{s.name} · {jobTitle(s)}</b><span className="money" style={{ color: s.money < 0 ? "var(--red)" : undefined }}>¥{s.money.toLocaleString()}</span></div>
+          <div className="career">
+            <span>Lv{lvOf(s)}</span>
+            <div className="bar"><i style={{ width: (nextLvXp(s) == null ? 100 : Math.min(100, (((s.xp || 0) - LV_XP[lvOf(s) - 1]) / (nextLvXp(s)! - LV_XP[lvOf(s) - 1])) * 100)) + "%" }} /></div>
+            <span className="sub">{nextLvXp(s) == null ? "已到顶级" : `经验 ${s.xp || 0}/${nextLvXp(s)}`} · 每周开销¥{weeklyCost(s)}</span>
+          </div>
           <div className="stats">{status.map(([l, v]) => <div className="st" key={l}>{l} {Math.round(v)}<div className="bar"><i className={v < 25 ? "low" : ""} style={{ width: v + "%" }} /></div></div>)}</div>
           <div className="last">{s.log[0]?.[1]}</div>
         </>
@@ -222,7 +227,8 @@ export default function Game() {
           ) : (
             <div className="acts">{actsAt(s, sel).map((a, i) => (
               <button key={i} className="act" disabled={busy || (a[2] > 0 && s.money < a[2])} onClick={() => go({ op: "act", i })}>
-                <span>{a[0]}</span><small>{a[1] >= 60 ? (a[1] / 60).toFixed(a[1] % 60 ? 1 : 0) + "小时" : a[1] + "分"}{a[2] ? " · ¥" + a[2] : ""}</small>
+                <span>{a[0]}{a[4] === "gig" && (() => { const [pl, k] = String(a[5]).split(":"); const g = GIGS[pl as PlaceId]?.[Number(k)]; return g ? <em className="hint">{gigHint(g)}</em> : null; })()}</span>
+                <small>{a[1] >= 60 ? (a[1] / 60).toFixed(a[1] % 60 ? 1 : 0) + "小时" : a[1] + "分"}{a[2] ? " · ¥" + a[2] : ""}</small>
               </button>))}</div>
           )}
         </aside>
