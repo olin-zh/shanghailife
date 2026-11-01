@@ -1,4 +1,4 @@
-:root{--ink:#1d2a24;--muted:#5d6b63;--card:rgba(255,255,255,.95);--green:#1f7a52;--red:#c4472f;--line:#e2e6e1;--font:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;color-scheme:light}
+:root{--ink:#1d2a24;--muted:#5d6b63;--card:rgba(255,255,255,.95);--green:#1f7a52;--red:#c4472f;--line:#e2e6e1;--font:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans CJK SC","Source Han Sans SC","Noto Sans SC",sans-serif;color-scheme:light}
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;background:#a9c98f;font:14px/1.5 var(--font);color:var(--ink)}
 body:has(.mapwrap){overflow:hidden}
