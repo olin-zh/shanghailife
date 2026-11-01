@@ -1,10 +1,10 @@
 // 地图网格：每格 4 个地图单位（市区约 300 米）。前后端共用，纯数据，不依赖 three.js。
 // 道路、河流按真实走向折成 0°/45°/90° 的折线，再把经过的格子标成对应用途。
-import { geo, HUANGPU, SUZHOU_CREEK } from "./geo";
+import { geo, HUANGPU, SUZHOU_CREEK, CELL, XMIN, ZMIN } from "./geo";
 import { PLACES, type PlaceId } from "./game";
 
-export const CELL = 4;
-export const XMIN = -152, ZMIN = -132, COLS = 96, ROWS = 84; // x: -152..232, z: -132..204
+export { CELL, XMIN, ZMIN };
+export const COLS = 96, ROWS = 84; // x: -152..232, z: -132..204
 export const XMAX = XMIN + COLS * CELL, ZMAX = ZMIN + ROWS * CELL;
 
 export const enum T { Land = 0, Sea = 1, River = 2, Road = 3, Park = 4, Reserved = 5 }
@@ -127,7 +127,11 @@ function riverSide(x: number, z: number) {
 
 // 地标、机场、松江住宅区等预留的区域（不随机盖楼）
 const RESERVE: { x: number; z: number; r: number }[] = [];
-for (const k in PLACES) { const p = PLACES[k as PlaceId]; RESERVE.push({ x: p.x, z: p.z, r: 9 }); }
+// 每个地标占的范围（半径，单位）：大的占好几格
+const FOOT: Partial<Record<PlaceId, number>> = { ljz: 15, home: 10, wk: 11, zj: 11, hq: 11, xjh: 9, jas: 9, wjc: 10, expo: 9, gongfang: 9, jiangjing: 7, yangfang: 8, chp: 8, xtd: 9, njl: 8, tzf: 7, ykl: 7, metro: 5, ferry: 5, rmgy: 6, bund: 6, qt: 6, sjgy: 6 };
+for (const k in PLACES) { const p = PLACES[k as PlaceId]; RESERVE.push({ x: p.x, z: p.z, r: FOOT[k as PlaceId] ?? 8 }); }
+{ const [x0, z0] = G(121.4737, 31.2304); RESERVE.push({ x: x0, z: z0, r: 9 }); } // 人民广场
+for (let i = 0; i < 9; i++) { const [x, z] = G(121.4897, 31.2318 + i * 0.0015); RESERVE.push({ x, z, r: 3.5 }); } // 外滩万国建筑
 { const s = PLACES.sjxc; RESERVE.push({ x: s.x, z: s.z + 10, r: 30 }); }
 RESERVE.push({ x: PLACES.pvg.x, z: PLACES.pvg.z, r: 24 }, { x: PLACES.sha.x + 1, z: PLACES.sha.z, r: 17 }, { x: PLACES.dsh.x + 6, z: PLACES.dsh.z, r: 30 });
 

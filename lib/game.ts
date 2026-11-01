@@ -1,6 +1,6 @@
 // 纯游戏规则：不依赖界面，前后端都能用。
-import { geo } from "./geo";
-const at = (lon: number, lat: number) => geo(lon, lat);
+import { geo, onGrid } from "./geo";
+const at = (lon: number, lat: number) => onGrid(geo(lon, lat)); // 所有地点都落在格子中心
 export type PlaceId = "home" | "rmgy" | "metro" | "bund" | "chp" | "tzf" | "wk" | "ykl" | "ljz" | "ferry" | "njl" | "jas" | "xtd" | "xjh" | "hq" | "wjc" | "expo" | "sjgy" | "zj" | "gongfang" | "jiangjing" | "yangfang" | "sjxc" | "pvg" | "sha" | "dsh" | "qt";
 export type JobId = "coder" | "barista" | "designer" | "engineer";
 export type Stats = { energy: number; hunger: number; fun: number; social: number };

@@ -1,5 +1,6 @@
 // 前滩商业地块：买地 → 盖健身房 / 咖啡馆 / 超市 / 服装店 → 挂招牌 → 雇玩家来打工。
 // 规则前后端共用；谁买了、账上多少钱存在 estates 表。
+import { onGrid } from "./geo";
 import { PLACES, advance, apply, check, gainSkills, log, sBonus, type PlaceId, type SkillId, type State } from "./game";
 
 // 12 块商业地分散在全市，各自挂在一个地点旁边；地段越好越贵、客流越大
@@ -24,7 +25,7 @@ export const SIGN_MAX_BYTES = 300 * 1024;
 export const HIDE_AFTER_REPORTS = 3;
 export const estatePrice = (id: number) => LOTS[id].price;
 export const estatePlace = (id: number) => LOTS[id].place;
-export const estatePos = (id: number) => ({ x: PLACES[LOTS[id].place].x + LOTS[id].dx, z: PLACES[LOTS[id].place].z + LOTS[id].dz });
+export const estatePos = (id: number) => onGrid({ x: PLACES[LOTS[id].place].x + LOTS[id].dx, z: PLACES[LOTS[id].place].z + LOTS[id].dz });
 export const estateName = (id: number) => `${PLACES[LOTS[id].place].name}商业地块`;
 export const estateAt = (place: PlaceId) => LOTS.findIndex((l) => l.place === place);
 

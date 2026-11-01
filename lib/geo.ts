@@ -13,6 +13,10 @@ export function geo(lon: number, lat: number) {
   return { x: x * f, z: z * f };
 }
 
+// 网格：每格 4 个单位（市区约 300 米），网格从 (XMIN, ZMIN) 开始
+export const CELL = 4, XMIN = -152, ZMIN = -132;
+export const onGrid = (p: { x: number; z: number }) => ({ x: XMIN + (Math.floor((p.x - XMIN) / CELL) + 0.5) * CELL, z: ZMIN + (Math.floor((p.z - ZMIN) / CELL) + 0.5) * CELL });
+
 // 黄浦江和苏州河的走向（经度, 纬度），从上游到下游
 export const HUANGPU: [number, number][] = [
   [121.405, 31.12], [121.44, 31.15], [121.47, 31.168], [121.488, 31.183], [121.499, 31.197], [121.503, 31.208],

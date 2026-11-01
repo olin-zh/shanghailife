@@ -2,7 +2,7 @@
 import * as THREE from "three";
 import { PLACES, type PlaceId } from "./game";
 import { PLOT_COUNT, SUBURB, plotName, plotPos, type Plot } from "./plots";
-import { geo } from "./geo";
+import { geo, onGrid } from "./geo";
 import { CELL, COLS, ROWS, XMIN, ZMIN, XMAX, ZMAX, T, buildGrid, centerOf, ROADS, RIVER_PTS, CREEK_PTS, COAST_PTS, SEA_POLY, GREENS, DISTRICTS, METROS } from "./grid";
 import { BOAT_COUNT, HUANGPU_BOATS, type Boat } from "./boats";
 import { KINDS, SLOTS, type Shop } from "./shops";
@@ -145,7 +145,8 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
     const east = x > riverXAt(z) && z > -40 && z < 60;
     const base = com ? (r < 30 ? 6 : 3.5) : 1.6, h = rnd(1.5, 4) + base + Math.max(0, 40 - r) / (east ? 2.5 : 8);
     const w = rnd(2, 3.1), d = rnd(2, 3.1), key = east && com ? (rand() < 0.6 ? "glass" : "glass2") : com ? (rand() < 0.5 ? "white" : "glass2") : r < 35 && !east ? (rand() < 0.35 ? "brick" : "grey") : rand() < 0.5 ? "white" : "grey";
-    towers[key].push([x + rnd(-0.4, 0.4), 0, z + rnd(-0.4, 0.4), w, Math.min(h, com ? 18 : 7), d]);
+    const cap = nearPlace(x, z, 15) ? 5 : com ? 16 : 7; // 地标旁边的楼压低，让地标露出来
+    towers[key].push([x + rnd(-0.4, 0.4), 0, z + rnd(-0.4, 0.4), w, Math.min(h, cap), d]);
   }
   instanced(unitBox, mats.park, parkTiles, false);
   const trunkG = new THREE.CylinderGeometry(0.4, 0.55, 1, 6); trunkG.translate(0, 0.5, 0);
@@ -184,7 +185,8 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
   const P = PLACES;
   let maglev: { a: number[]; b: number[]; ang: number } | null = null;
   const mills: THREE.Group[] = [];
-  const LM = { pearl: geo(121.4998, 31.2397), jinmao: { x: 33, z: -11.5 }, swfc: { x: 37, z: -10.5 }, tower: { x: 40.5, z: -7.5 }, rps: geo(121.4737, 31.2304) };
+  // 陆家嘴三件套和东方明珠各占一格：金茂在陆家嘴地点南边一格，上海中心再南一格，环球在金茂东边
+  const LM = { pearl: onGrid(geo(121.4998, 31.2397)), jinmao: { x: P.ljz.x, z: P.ljz.z + CELL }, swfc: { x: P.ljz.x + CELL, z: P.ljz.z + CELL }, tower: { x: P.ljz.x, z: P.ljz.z + CELL * 2 }, rps: onGrid(geo(121.4737, 31.2304)) };
   const shiftSince = (m0: number, dx: number, dz: number) => { for (let i = m0; i < scene.children.length; i++) { scene.children[i].position.x += dx; scene.children[i].position.z += dz; } };
 
   /* ---- 松江新城：售楼处、湖、24 块地 ---- */
@@ -311,26 +313,27 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
   shiftSince(m0, P.yangfang.x - (-60), P.yangfang.z - (24)); }
   { const m0 = scene.children.length;
   // 东方明珠
-  { const x = 15, z = -10; plot(x, z, 6, 6, mats.grey);
+  { const x = 15, z = -10; plot(x, z, 3.8, 3.8, mats.grey);
     [[-1.2, -1.2], [1.2, -1.2], [0, 1.4]].forEach(([dx, dz]) => { const l = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.35, 9, 8), mats.white); l.position.set(x + dx * 0.6, 4.3, z + dz * 0.6); l.castShadow = true; scene.add(l); });
     sphere(2, mats.pink, x, 6, z); cyl(0.4, 0.4, 10, mats.white, x, 6, z); sphere(1.3, mats.pink, x, 16, z); cyl(0.25, 0.3, 3, mats.white, x, 16, z); sphere(0.6, mats.pink, x, 19.6, z); cyl(0.06, 0.12, 4, mats.grey, x, 20, z, 6); }
   shiftSince(m0, LM.pearl.x - (15), LM.pearl.z - (-10)); }
   { const m0 = scene.children.length;
   // 上海中心
-  { const x = 24, z = -2; plot(x, z, 7, 7, mats.grey); for (let i = 0; i < 14; i++) { const s = 2.4 - i * 0.11; box(s, 2.2, s, i % 2 ? mats.glass : mats.glass2, x, i * 2.2, z).rotation.y = i * 0.12; } }
+  { const x = 24, z = -2; plot(x, z, 3.8, 3.8, mats.grey); for (let i = 0; i < 14; i++) { const s = 2.4 - i * 0.11; box(s, 2.2, s, i % 2 ? mats.glass : mats.glass2, x, i * 2.2, z).rotation.y = i * 0.12; } }
   shiftSince(m0, LM.tower.x - (24), LM.tower.z - (-2)); }
   { const m0 = scene.children.length;
   // 金茂
-  { const x = 30, z = -6; plot(x, z, 6, 6, mats.grey); [2.6, 2.3, 2, 1.7, 1.4, 1.1, 0.8].forEach((s, i) => box(s, 3.2, s, mats.bronze, x, i * 3.2, z)); cyl(0, 0.4, 3, mats.gold, x, 22.4, z, 4); }
+  { const x = 30, z = -6; plot(x, z, 3.8, 3.8, mats.grey); [2.6, 2.3, 2, 1.7, 1.4, 1.1, 0.8].forEach((s, i) => box(s, 3.2, s, mats.bronze, x, i * 3.2, z)); cyl(0, 0.4, 3, mats.gold, x, 22.4, z, 4); }
   shiftSince(m0, LM.jinmao.x - (30), LM.jinmao.z - (-6)); }
   { const m0 = scene.children.length;
   // 环球金融中心
-  { const x = 30, z = 4; plot(x, z, 6, 6, mats.grey); box(2.6, 22, 2.2, mats.glass, x, 0, z); box(1.2, 1.6, 2.4, mats.glass2, x, 19.5, z); }
+  { const x = 30, z = 4; plot(x, z, 3.8, 3.8, mats.grey); box(2.6, 22, 2.2, mats.glass, x, 0, z); box(1.2, 1.6, 2.4, mats.glass2, x, 19.5, z); }
   shiftSince(m0, LM.swfc.x - (30), LM.swfc.z - (4)); }
   { const m0 = scene.children.length;
   // 陆家嘴其他楼
-  [[20, 8, 8], [36, -14, 10], [38, 2, 12], [22, -16, 7], [42, 12, 8], [36, 14, 6]].forEach(([x, z, h]) => { plot(x, z, 4, 4, mats.grey); box(2.6, h, 2.6, rand() < 0.5 ? mats.glass : mats.white, x, 0, z); });
-  shiftSince(m0, P.ljz.x - (22), P.ljz.z - (-6)); }
+  // 其他高楼：按格子摆在三件套周围
+  [[1, 0, 10], [-1, 1, 8], [1, 2, 12], [2, 1, 8], [-1, 2, 7], [2, 0, 6], [2, 2, 9]].forEach(([i, j, h]) => { const x = i * CELL, z = j * CELL; plot(x, z, 3.8, 3.8, mats.grey); box(2.6, h, 2.6, rand() < 0.5 ? mats.glass : mats.white, x, 0, z); });
+  shiftSince(m0, P.ljz.x, P.ljz.z); }
   // 外滩：沿黄浦江西岸一排万国建筑
   for (let i = 0; i < 9; i++) { const lat = 31.2318 + i * 0.0015; const [x, z] = G(121.4897, lat); const h = 3 + ((i * 7) % 4);
     box(2.4, h, 3, i % 3 ? mats.stone : mats.white, x, 0, z);
