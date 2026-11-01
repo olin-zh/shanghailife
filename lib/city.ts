@@ -625,13 +625,14 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
     setCell(id) { if (id == null) { selBox.visible = false; return; } const { x, z } = cellPos(id); selBox.position.set(x, 0, z); selBox.visible = true; },
     setBoats(list) {
       list.forEach((b) => {
-        const B = boats[b.id]; if (!B || B.ver === b.version) return;
-        B.ver = b.version; B.tex?.dispose(); B.tex = null;
+        const key = b.version * 2 + (b.flagged ? 1 : 0); // 被举报的图换成马赛克版
+        const B = boats[b.id]; if (!B || B.ver === key) return;
+        B.ver = key; B.tex?.dispose(); B.tex = null;
         if (!b.version) { B.face.material = freeMat; return; }
-        const ver = b.version;
-        loader.load(`/api/boats/${b.id}/image?v=${ver}`, (tex) => {
+        const ver = key;
+        loader.load(`/api/boats/${b.id}/image?v=${b.version}${b.flagged ? "&m=1" : ""}`, (tex) => {
           if (B.ver !== ver) { tex.dispose(); return; }
-          tex.colorSpace = THREE.SRGBColorSpace; B.tex = tex; B.face.material = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide });
+          tex.colorSpace = THREE.SRGBColorSpace; if (b.flagged) { tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter; } B.tex = tex; B.face.material = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide });
         }, undefined, () => { B.face.material = freeMat; });
       });
     },

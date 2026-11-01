@@ -17,7 +17,9 @@ export async function GET(req: Request) {
   const rows = (await DB.prepare("SELECT l.ts, l.src, l.dst, l.amount, l.memo, us.name AS sn, ud.name AS dn FROM ledger l LEFT JOIN users us ON us.id = l.src LEFT JOIN users ud ON ud.id = l.dst ORDER BY l.id DESC LIMIT 100").all<{ ts: number; src: string; dst: string; amount: number; memo: string; sn: string | null; dn: string | null }>()).results;
   const nm = (id: string, n: string | null) => (SYS as Record<string, string>)[id] ?? (id === "mint" ? "货币发行" : n ?? "玩家");
   const signs = (await DB.prepare("SELECT id, owner_name, name, sign_ver FROM estates WHERE sign IS NOT NULL AND sign_hidden = 0 ORDER BY id").all<{ id: number; owner_name: string; name: string | null; sign_ver: number }>()).results;
-  return json({ accounts, players, minted: minted?.n ?? 0, rows: rows.map((r) => ({ ts: r.ts, from: nm(r.src, r.sn), to: nm(r.dst, r.dn), amount: r.amount, memo: r.memo })), signs });
+  const flagged = (await DB.prepare("SELECT b.id, b.owner_name, b.caption, b.version, (SELECT COUNT(*) FROM boat_reports r WHERE r.boat_id = b.id AND r.version = b.version) AS reports FROM boats b WHERE b.flagged = 1 AND b.owner IS NOT NULL ORDER BY b.id").all<{ id: number; owner_name: string; caption: string | null; version: number; reports: number }>()).results;
+  const orders = (await DB.prepare("SELECT id, user_name, boat_id, kind, amount, status, created_at, paid_at FROM boat_orders WHERE status IN ('paid', 'refunded') ORDER BY created_at DESC LIMIT 50").all()).results;
+  return json({ flagged, orders, accounts, players, minted: minted?.n ?? 0, rows: rows.map((r) => ({ ts: r.ts, from: nm(r.src, r.sn), to: nm(r.dst, r.dn), amount: r.amount, memo: r.memo })), signs });
 }
 
 export async function POST(req: Request) {
@@ -30,6 +32,14 @@ export async function POST(req: Request) {
     const memo = String(b.memo || "").trim().slice(0, 40) || (amount > 0 ? "增发货币" : "回收货币");
     await flow(DB, "mint", "gov", amount, `管理员：${memo}`);
     return json({ toast: amount > 0 ? `市政府储备增加¥${amount.toLocaleString()}` : `市政府储备减少¥${(-amount).toLocaleString()}` });
+  }
+  if (b.op === "boat_ok") { // 审核通过：去掉马赛克，这一版图片之后的举报不再打码
+    const r = await DB.prepare("UPDATE boats SET flagged = 0, reviewed_ver = version WHERE id = ?").bind(Number(b.id)).run();
+    return r.meta.changes ? json({ toast: "已恢复上架" }) : json({ error: "没有这艘船" }, 404);
+  }
+  if (b.op === "boat_off") {
+    const r = await DB.prepare("UPDATE boats SET owner = NULL, owner_name = NULL, image = NULL, mime = NULL, mosaic = NULL, caption = NULL, expires_at = NULL, hidden = 0, flagged = 0 WHERE id = ?").bind(Number(b.id)).run();
+    return r.meta.changes ? json({ toast: "广告已下架" }) : json({ error: "没有这艘船" }, 404);
   }
   if (b.op === "sign_off") {
     const r = await DB.prepare("UPDATE estates SET sign_hidden = 1 WHERE id = ? AND sign IS NOT NULL").bind(Number(b.id)).run();

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createCity, type City, type Other } from "../lib/city";
 import type { Plot } from "../lib/plots";
 import { allParcels, parcelName, parcelOf, MAX_HOUSES } from "../lib/grid";
-import { AD_DAYS, AD_PRICE, BOAT_COUNT, boatName, type Boat } from "../lib/boats";
+import { AD_DAYS, AD_USD_CENTS, BOAT_COUNT, boatName, type Boat } from "../lib/boats";
 import { EKINDS, MAX_STAFF, SHIFT_MINS, WAGE_MAX, WAGE_MIN, estateName, estatePlace, estatePrice, perDay, type Estate, type EstateKind } from "../lib/estates";
 import { DEPOSIT, KINDS, SLOTS, npcPerHour, slotAt, type Shop, type ShopKind } from "../lib/shops";
 import { ENTRY_JOBS, START_GRANT, actsAt, homeOf, homePlace, isHome, HOMES, GIGS, gigHint, jobTitle, lvOf, nextLvXp, LV_XP, weeklyCost, GIFT_AMOUNTS, JOBS, NPCS, PLACES, act, clock, coopable, isState, mood, newGame, travel, trip, SKILLS, skillMax, skillPer, LICENSE_LV, skillLv, type SkillId, type JobId, type PlaceId, type State } from "../lib/game";
@@ -37,6 +37,7 @@ export default function Game() {
   const [me, setMe] = useState<string | null>(null);
   const loadEstates = useCallback(() => { fetch("/api/estates").then((r) => r.json() as Promise<any>).then((d) => { if (Array.isArray(d.estates)) { setEstates(d.estates); setMe(d.me ?? null); } }).catch(() => {}); }, []);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [pending, setPending] = useState(0);
   const [boatSel, setBoatSel] = useState<number | null>(null);
   const loadBoats = useCallback(() => { fetch("/api/boats").then((r) => r.json() as Promise<any>).then((d) => { if (Array.isArray(d.boats)) { setBoats(d.boats); setIsAdmin(!!d.admin); } }).catch(() => {}); }, []);
   const [sellAsk, setSellAsk] = useState(false);
@@ -58,8 +59,11 @@ export default function Game() {
     let local: State | null = null;
     try { const x = JSON.parse(localStorage.getItem(LOCAL) || "null"); if (isState(x)) local = x; } catch {}
     setS(local);
-    fetch("/api/auth/me").then((r) => r.json() as Promise<any>).then((d) => { setUser(d.user ?? null); setXOn(!!d.x); setIsAdmin(!!d.admin); }).catch(() => setUser(null));
-    const le = new URLSearchParams(location.search).get("login_error");
+    fetch("/api/auth/me").then((r) => r.json() as Promise<any>).then((d) => { setUser(d.user ?? null); setXOn(!!d.x); setIsAdmin(!!d.admin); setPending(d.pending || 0); if (d.admin && d.pending) say(`有 ${d.pending} 条被举报的广告等侬审核`); }).catch(() => setUser(null));
+    const q = new URLSearchParams(location.search);
+    if (q.get("paid")) { say("付款成功！广告几秒钟后挂上 🚢"); history.replaceState(null, "", "/" + location.hash); [3000, 8000, 15000].forEach((t) => setTimeout(loadBoats, t)); }
+    else if (q.get("unpaid")) { say("付款取消了，船位会保留 30 分钟"); history.replaceState(null, "", "/" + location.hash); }
+    const le = q.get("login_error");
     if (le) { say(({ x_off: "X 登录还没开通", x_cancel: "侬取消了 X 登录", x_state: "登录超时了，请再试一次", x_token: "X 授权失败，请再试一次", x_user: "读取 X 账号信息失败" } as Record<string, string>)[le] || "登录失败"); history.replaceState(null, "", "/"); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -210,7 +214,7 @@ export default function Game() {
         <button className="pill" onClick={() => setPanel(panel === "estates" ? null : "estates")}>🏗️ 买地 · 余{allParcels().length - plots.length - estates.length}格</button>
         <button className="pill" onClick={() => setPanel(panel === "skills" ? null : "skills")}>🎯 能力</button>
         <button className="pill" onClick={() => setPanel(panel === "money" ? null : "money")}>💰 账本</button>
-        {isAdmin && <button className="pill" onClick={() => setPanel(panel === "admin" ? null : "admin")}>🛠️ 管理</button>}
+        {isAdmin && <button className="pill" onClick={() => setPanel(panel === "admin" ? null : "admin")}>🛠️ 管理{pending ? ` · ${pending} 待审` : ""}</button>}
         <button className="pill" onClick={() => setPanel(panel === "chat" ? null : "chat")}>💬 聊天</button>
         <button className="pill" onClick={() => setPanel(panel === "friends" ? null : "friends")}>🤝 朋友</button>
         <button className="pill" onClick={() => setPanel(panel === "log" ? null : "log")}>📜 日脚</button>
@@ -276,7 +280,7 @@ export default function Game() {
                 {hiring.map((e) => <button key={e.id} className="act" onClick={() => { setPanel(null); setCell(e.id); setSel(null); city.current?.focus(estatePlace(e.id)); }}><span>{EKINDS[e.kind!].ic}「{e.name}」· 日薪¥{e.wage}</span><small>{PLACES[estatePlace(e.id)].name}旁 · 缺 {e.openings - e.staff.length} 人</small></button>)}
               </>; })()}</>}
           {panel === "money" && <LedgerBox user={user} s={s} />}
-          {panel === "admin" && isAdmin && <AdminBox onSay={say} />}
+          {panel === "admin" && isAdmin && <AdminBox onSay={say} onPending={setPending} />}
           {panel === "skills" && s && <><h2>能力</h2><p className="muted">驾驶最高 20 级、每级 +0.1%；其他能力最高 50 级、每级 +4%。</p>
             {(Object.keys(SKILLS) as SkillId[]).map((k) => { const v = skillLv(s.sk?.[k] || 0, skillMax(k)), sk = SKILLS[k]; return (
               <div key={k} style={{ margin: "10px 0" }}>
@@ -401,6 +405,15 @@ function ResetButton({ onReset }: { onReset: () => void }) {
 }
 
 // 把图片缩放裁成 2:1 的 JPEG（最大 640×320），顺便去掉照片里的定位等信息
+// 马赛克版：缩到 24×12 再存成 JPEG，审核期间给其他玩家看
+async function toMosaic(blob: Blob): Promise<Blob> {
+  const url = URL.createObjectURL(blob);
+  try {
+    const img = await new Promise<HTMLImageElement>((ok, bad) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => bad(new Error("读不了这张图片")); i.src = url; });
+    const c = document.createElement("canvas"); c.width = 24; c.height = 12; c.getContext("2d")!.drawImage(img, 0, 0, 24, 12);
+    return (await new Promise<Blob | null>((ok) => c.toBlob(ok, "image/jpeg", 0.8)))!;
+  } finally { URL.revokeObjectURL(url); }
+}
 async function toAdJpeg(file: File): Promise<Blob> {
   const url = URL.createObjectURL(file);
   try {
@@ -430,13 +443,16 @@ function BoatView({ boat, user, hasGame, money, admin, onClose, onDone, onLogin 
     if (!file) return;
     setBusy(true);
     try {
-      const blob = await toAdJpeg(file);
-      const r = await fetch(`/api/boats/${boat.id}?caption=${encodeURIComponent(caption)}`, { method: "POST", headers: { "content-type": "image/jpeg" }, body: blob });
-      const d = await r.json().catch(() => ({ error: "上传失败" }));
+      const blob = await toAdJpeg(file), fd = new FormData();
+      fd.append("image", blob, "ad.jpg"); fd.append("mosaic", await toMosaic(blob), "m.jpg"); fd.append("caption", caption);
+      const r = await fetch(`/api/boats/${boat.id}`, { method: "POST", body: fd });
+      const d = (await r.json().catch(() => ({ error: "上传失败" }))) as any;
+      if (d.url) { location.href = d.url; return; } // 去 Stripe 付款页
       onDone(d); if (r.ok) { setFile(null); setCaption(""); }
     } catch (e) { onDone({ error: (e as Error).message }); }
     setBusy(false);
   };
+  const renew = async () => { setBusy(true); const r = await fetch(`/api/boats/${boat.id}?renew=1`, { method: "POST" }).catch(() => null); const d = r ? ((await r.json().catch(() => ({}))) as any) : { error: "网络出错了" }; if (d.url) { location.href = d.url; return; } onDone(d); setBusy(false); };
   const call = async (url: string, method: string) => { setBusy(true); const r = await fetch(url, { method }).catch(() => null); onDone(r ? await r.json().catch(() => ({})) : { error: "网络出错了" }); setBusy(false); };
   return (
     <div className="lightbox" role="dialog" aria-label={boatName(boat.id)} onClick={onClose}>
@@ -444,9 +460,11 @@ function BoatView({ boat, user, hasGame, money, admin, onClose, onDone, onLogin 
         <button className="x" aria-label="关闭" onClick={onClose}>✕</button>
         <h2>🚢 {boatName(boat.id)}</h2>
         {live ? <>
-          <img className="adimg" src={`/api/boats/${boat.id}/image?v=${boat.version}`} alt={boat.caption || `${boat.ownerName}的广告`} />
+          <img className="adimg" style={boat.flagged && !boat.mine && !admin ? { imageRendering: "pixelated" } : undefined} src={`/api/boats/${boat.id}/image?v=${boat.version}${boat.flagged && !boat.mine && !admin ? "&m=1" : ""}`} alt={boat.caption || `${boat.ownerName}的广告`} />
+          {boat.flagged && <p className="sub">⚠️ 这张图被举报了，管理员审核前先打上马赛克。</p>}
           <p className="sub">{boat.ownerName} 的广告{boat.caption ? ` · ${boat.caption}` : ""} · 还剩 {daysLeft} 天</p>
           <div className="row2">
+            {boat.mine && <button className="btn primary" disabled={busy} onClick={renew}>续租 {AD_DAYS} 天 · ${AD_USD_CENTS / 100}</button>}
             {boat.mine && <label className="btn ghost filebtn">换一张图<input type="file" accept="image/*" hidden onChange={(e) => setFile(e.target.files?.[0] ?? null)} /></label>}
             {(boat.mine || admin) && (confirmDel
               ? <><span className="sub">确定撤下？费用不退。</span><button className="btn ghost" onClick={() => setConfirmDel(false)}>算了</button><button className="btn primary" disabled={busy} onClick={() => call(`/api/boats/${boat.id}`, "DELETE")}>撤下</button></>
@@ -455,16 +473,16 @@ function BoatView({ boat, user, hasGame, money, admin, onClose, onDone, onLogin 
           </div>
         </> : <>
           <div className="adfree">广告位招租</div>
-          <p className="sub">上传一张图片，挂在这艘船的广告牌上 {AD_DAYS} 天，全城玩家都看得到。¥{AD_PRICE.toLocaleString()} 游戏币，每人最多同时 3 艘。图片会被裁成 2:1。</p>
+          <p className="sub">上传一张图片，挂在这艘船的广告牌上 {AD_DAYS} 天，全城玩家都看得到。租金 <b>${AD_USD_CENTS / 100} 美元 / 周</b>，用信用卡通过 Stripe 支付；每人最多同时 3 艘。图片会被裁成 2:1。</p>
+          {boat.held && <p className="sub">⏳ 有人正在付款租这艘船，30 分钟内没付完会重新放出来。</p>}
           {!user ? <button className="big" onClick={onLogin}>登录后租船</button>
-            : !hasGame ? <p className="sub">先开始游戏才能租船。</p>
             : <label className="btn ghost filebtn">选择图片<input type="file" accept="image/*" hidden onChange={(e) => setFile(e.target.files?.[0] ?? null)} /></label>}
         </>}
         {file && <>
           {preview && <img className="adimg" src={preview} alt="预览" />}
           <input id="ad-caption" value={caption} maxLength={40} onChange={(e) => setCaption(e.target.value)} placeholder="一句话说明（选填）" />
-          <p className="sub">请勿上传色情、暴力、侵权或违法内容；被 3 位玩家举报会自动隐藏。</p>
-          <button className="big" disabled={busy || (!live && money < AD_PRICE)} onClick={upload}>{busy ? "上传中…" : live ? "换上这张图" : money < AD_PRICE ? `钞票不够（要¥${AD_PRICE.toLocaleString()}）` : `付¥${AD_PRICE.toLocaleString()} 挂上去`}</button>
+          <p className="sub">请勿上传色情、暴力、侵权或违法内容。被举报的图会先打马赛克，由管理员决定恢复还是下架。</p>
+          <button className="big" disabled={busy} onClick={upload}>{busy ? (live ? "上传中…" : "正在打开付款页…") : live ? "换上这张图" : `去付款 · $${AD_USD_CENTS / 100} 挂 ${AD_DAYS} 天`}</button>
         </>}
       </div>
     </div>
@@ -647,18 +665,24 @@ function LedgerBox({ user, s }: { user: User | null | undefined; s: State | null
 }
 
 // 管理员后台：系统账户、全服流水、调整市政府储备、下架店招牌
-function AdminBox({ onSay }: { onSay: (t: string) => void }) {
-  type D = { accounts: { id: string; name: string; balance: number }[]; players: { n: number; money: number }; minted: number; rows: { ts: number; from: string; to: string; amount: number; memo: string }[]; signs: { id: number; owner_name: string; name: string | null; sign_ver: number }[] };
+function AdminBox({ onSay, onPending }: { onSay: (t: string) => void; onPending: (n: number) => void }) {
+  type D = { flagged: { id: number; owner_name: string; caption: string | null; version: number; reports: number }[]; orders: { id: string; user_name: string; boat_id: number; kind: string; amount: number; status: string; paid_at: number }[]; accounts: { id: string; name: string; balance: number }[]; players: { n: number; money: number }; minted: number; rows: { ts: number; from: string; to: string; amount: number; memo: string }[]; signs: { id: number; owner_name: string; name: string | null; sign_ver: number }[] };
   const [d, setD] = useState<D | null>(null);
   const [amt, setAmt] = useState(1000000);
   const [memo, setMemo] = useState("");
-  const load = useCallback(() => { fetch("/api/admin").then((r) => r.json() as Promise<any>).then((x) => { if (x.error) onSay(x.error); else setD(x); }).catch(() => {}); }, [onSay]);
+  const load = useCallback(() => { fetch("/api/admin").then((r) => r.json() as Promise<any>).then((x) => { if (x.error) onSay(x.error); else { setD(x); onPending(x.flagged.length); } }).catch(() => {}); }, [onSay]);
   useEffect(load, [load]);
   const post = async (b: Record<string, unknown>) => { const r = await fetch("/api/admin", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) }); const x = (await r.json().catch(() => ({}))) as any; onSay(x.error || x.toast); load(); };
   if (!d) return <p>读取中…</p>;
   const total = d.accounts.reduce((a, x) => a + x.balance, 0) + d.players.money;
   return <>
     <h2>管理后台</h2>
+    <h2 style={{ marginTop: 8 }}>被举报的游船广告（{d.flagged.length}）</h2>
+    {!d.flagged.length && <p className="sub">没有待审核的广告。</p>}
+    {d.flagged.map((b) => <div key={b.id} style={{ marginBottom: 8 }}><img className="adimg" src={`/api/boats/${b.id}/image?v=${b.version}`} alt={`${b.owner_name}的广告`} /><div className="row2"><span className="sub">{boatName(b.id)} · {b.owner_name}{b.caption ? ` ·「${b.caption}」` : ""} · {b.reports} 人举报</span><button className="btn primary" onClick={() => post({ op: "boat_ok", id: b.id })}>恢复上架</button><button className="btn ghost" onClick={() => post({ op: "boat_off", id: b.id })}>下架</button></div></div>)}
+    {d.orders.length > 0 && <><h2 style={{ marginTop: 8 }}>广告收入（最近 50 笔）</h2>
+      <p className="sub">合计 ${(d.orders.filter((o) => o.status === "paid").reduce((a, o) => a + o.amount, 0) / 100).toFixed(2)}（Stripe 手续费另扣）</p>
+      {d.orders.map((o) => <p key={o.id}><span className="t">{new Date(o.paid_at).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span> {o.user_name} · {boatName(o.boat_id)} · {o.kind === "renew" ? "续租" : "新租"} · ${o.amount / 100}{o.status === "refunded" ? "（已退款）" : ""}</p>)}</>}
     {d.accounts.map((a) => <p key={a.id}>{a.id === "gov" ? "🏛️" : "🏪"} {a.name} <b>¥{a.balance.toLocaleString()}</b></p>)}
     <p>👥 玩家 {d.players.n} 人，手上共 <b>¥{Math.round(d.players.money).toLocaleString()}</b></p>
     <p className="sub">全服货币总量 ¥{Math.round(total).toLocaleString()} · 管理员累计增发 ¥{d.minted.toLocaleString()}（另含开服储备 ¥10,000,000）</p>

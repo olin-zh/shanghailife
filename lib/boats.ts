@@ -1,13 +1,13 @@
 // 游船广告：规则写在这里，前后端共用。
 export const BOAT_COUNT = 12;
 export const HUANGPU_BOATS = 10; // 0–9 在黄浦江，10–11 在苏州河
-export const AD_PRICE = 2000; // 游戏币
+export const AD_USD_CENTS = 1000; // 真钱：每周 $10（Stripe 收款）
+export const HOLD_MINUTES = 30; // 去付款期间先把船位留 30 分钟
 export const AD_DAYS = 7; // 真实天数
 export const AD_MAX_PER_PLAYER = 3;
 export const AD_MAX_BYTES = 300 * 1024;
-export const HIDE_AFTER_REPORTS = 3;
 export const boatName = (id: number) => (id < HUANGPU_BOATS ? `黄浦江 ${id + 1} 号游船` : `苏州河 ${id - HUANGPU_BOATS + 1} 号小船`);
-export type Boat = { id: number; ownerName: string | null; caption: string | null; version: number; expiresAt: number | null; mine?: boolean };
+export type Boat = { id: number; ownerName: string | null; caption: string | null; version: number; expiresAt: number | null; mine?: boolean; flagged?: boolean; held?: boolean };
 
 // 只认 JPEG / PNG / WebP 的文件头
 export function sniffImage(b: Uint8Array): string | null {
