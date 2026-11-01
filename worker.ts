@@ -21,6 +21,8 @@ function cookie(h: string | null, name: string) {
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext) {
     const url = new URL(req.url);
+    // www 统一跳到根域名，登录状态和游客存档才不会分成两份
+    if (url.hostname.startsWith("www.")) { url.hostname = url.hostname.slice(4); return Response.redirect(url.toString(), 301); }
     if (url.pathname === "/api/ws") {
       if (req.headers.get("upgrade") !== "websocket") return new Response("需要 WebSocket", { status: 426 });
       const token = cookie(req.headers.get("cookie"), "sl_session");
