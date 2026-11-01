@@ -687,7 +687,7 @@ function AdminBox({ onSay, onPending }: { onSay: (t: string) => void; onPending:
     <p>👥 玩家 {d.players.n} 人，手上共 <b>¥{Math.round(d.players.money).toLocaleString()}</b></p>
     <p className="sub">全服货币总量 ¥{Math.round(total).toLocaleString()} · 管理员累计增发 ¥{d.minted.toLocaleString()}（另含开服储备 ¥10,000,000）</p>
     <h2 style={{ marginTop: 8 }}>调整市政府储备</h2>
-    <label className="pricerow">金额 ¥<input id="admin-amt" type="number" value={amt} onChange={(e) => setAmt(Math.round(Number(e.target.value)))} /></label>
+    <label className="pricerow">金额 ¥<input id="admin-amt" type="number" inputMode="numeric" style={{ width: "auto", flex: 1, minWidth: 140 }} value={amt} onChange={(e) => setAmt(Math.round(Number(e.target.value)))} /><span className="sub">= ¥{Math.abs(amt || 0).toLocaleString()}</span></label>
     <input id="admin-memo" value={memo} maxLength={40} onChange={(e) => setMemo(e.target.value)} placeholder="说明，比如：开新区增发" />
     <div className="row2"><button className="btn primary" onClick={() => post({ op: "mint", amount: Math.abs(amt), memo })}>增发</button><button className="btn ghost" onClick={() => post({ op: "mint", amount: -Math.abs(amt), memo })}>回收</button></div>
     <h2 style={{ marginTop: 8 }}>店招牌（{d.signs.length}）</h2>
