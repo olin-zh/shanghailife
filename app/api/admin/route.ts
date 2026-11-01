@@ -1,6 +1,7 @@
 // 管理员后台：全服账本、系统账户、调整市政府储备、下架店招牌
 import { env, readCookie, userFromToken, SESSION_COOKIE, json, isAdminUser } from "../../../lib/auth";
 import { flow, SYS } from "../../../lib/ledger";
+import { wipePlayer, wipeAll } from "../../../lib/wipe";
 
 async function guard(req: Request) {
   const e = await env();
@@ -19,7 +20,9 @@ export async function GET(req: Request) {
   const signs = (await DB.prepare("SELECT id, owner_name, name, sign_ver FROM estates WHERE sign IS NOT NULL AND sign_hidden = 0 ORDER BY id").all<{ id: number; owner_name: string; name: string | null; sign_ver: number }>()).results;
   const flagged = (await DB.prepare("SELECT b.id, b.owner_name, b.caption, b.version, (SELECT COUNT(*) FROM boat_reports r WHERE r.boat_id = b.id AND r.version = b.version) AS reports FROM boats b WHERE b.flagged = 1 AND b.owner IS NOT NULL ORDER BY b.id").all<{ id: number; owner_name: string; caption: string | null; version: number; reports: number }>()).results;
   const orders = (await DB.prepare("SELECT id, user_name, boat_id, kind, amount, status, created_at, paid_at FROM boat_orders WHERE status IN ('paid', 'refunded') ORDER BY created_at DESC LIMIT 50").all()).results;
-  return json({ flagged, orders, accounts, players, minted: minted?.n ?? 0, rows: rows.map((r) => ({ ts: r.ts, from: nm(r.src, r.sn), to: nm(r.dst, r.dn), amount: r.amount, memo: r.memo })), signs });
+  // 玩家列表：最近注册的 200 个，带角色名和钱
+  const players2 = (await DB.prepare("SELECT u.id, u.email, u.name, u.created_at, json_extract(s.data, '$.name') AS cname, json_extract(s.data, '$.money') AS money FROM users u LEFT JOIN saves s ON s.user_id = u.id ORDER BY u.created_at DESC LIMIT 200").all()).results;
+  return json({ playerList: players2, flagged, orders, accounts, players, minted: minted?.n ?? 0, rows: rows.map((r) => ({ ts: r.ts, from: nm(r.src, r.sn), to: nm(r.dst, r.dn), amount: r.amount, memo: r.memo })), signs });
 }
 
 export async function POST(req: Request) {
@@ -32,6 +35,18 @@ export async function POST(req: Request) {
     const memo = String(b.memo || "").trim().slice(0, 40) || (amount > 0 ? "增发货币" : "回收货币");
     await flow(DB, "mint", "gov", amount, `管理员：${memo}`);
     return json({ toast: amount > 0 ? `市政府储备增加¥${amount.toLocaleString()}` : `市政府储备减少¥${(-amount).toLocaleString()}` });
+  }
+  if (b.op === "wipe_player" && typeof b.uid === "string") { // 清某个玩家：只清存档，或连账号一起删
+    if (b.uid === g.user.id && b.account) return json({ error: "不能删除自己的管理员账号" }, 400);
+    await wipePlayer(DB, b.uid, "管理员清除玩家数据", !!b.account);
+    return json({ toast: b.account ? "账号和数据已删除" : "该玩家的游戏数据已清除" });
+  }
+  if (b.op === "wipe_all") { // 清空全服：要输入“清空全部”；可选连非管理员账号一起删
+    if (String(b.confirm || "").trim() !== "清空全部") return json({ error: "请输入“清空全部”确认" }, 400);
+    const e2 = (await import("../../../lib/auth")).env; const ev = await e2();
+    const keep = String((ev as { ADMIN_EMAILS?: string }).ADMIN_EMAILS || "").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean);
+    await wipeAll(DB, !!b.accounts, keep);
+    return json({ toast: b.accounts ? "全服数据和玩家账号已清空（管理员账号保留）" : "全服游戏数据已清空，账号保留" });
   }
   if (b.op === "boat_ok") { // 审核通过：去掉马赛克，这一版图片之后的举报不再打码
     const r = await DB.prepare("UPDATE boats SET flagged = 0, reviewed_ver = version WHERE id = ?").bind(Number(b.id)).run();

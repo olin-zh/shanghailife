@@ -715,10 +715,12 @@ function LedgerBox({ user, s }: { user: User | null | undefined; s: State | null
 
 // 管理员后台：系统账户、全服流水、调整市政府储备、下架店招牌
 function AdminBox({ onSay, onPending }: { onSay: (t: string) => void; onPending: (n: number) => void }) {
-  type D = { flagged: { id: number; owner_name: string; caption: string | null; version: number; reports: number }[]; orders: { id: string; user_name: string; boat_id: number; kind: string; amount: number; status: string; paid_at: number }[]; accounts: { id: string; name: string; balance: number }[]; players: { n: number; money: number }; minted: number; rows: { ts: number; from: string; to: string; amount: number; memo: string }[]; signs: { id: number; owner_name: string; name: string | null; sign_ver: number }[] };
+  type D = { playerList: { id: string; email: string; name: string; created_at: number; cname: string | null; money: number | null }[]; flagged: { id: number; owner_name: string; caption: string | null; version: number; reports: number }[]; orders: { id: string; user_name: string; boat_id: number; kind: string; amount: number; status: string; paid_at: number }[]; accounts: { id: string; name: string; balance: number }[]; players: { n: number; money: number }; minted: number; rows: { ts: number; from: string; to: string; amount: number; memo: string }[]; signs: { id: number; owner_name: string; name: string | null; sign_ver: number }[] };
   const [d, setD] = useState<D | null>(null);
   const [amt, setAmt] = useState(1000000);
   const [memo, setMemo] = useState("");
+  const [q, setQ] = useState(""); const [ask, setAsk] = useState<string | null>(null);
+  const [wipeTxt, setWipeTxt] = useState(""); const [wipeAcc, setWipeAcc] = useState(false);
   const load = useCallback(() => { fetch("/api/admin").then((r) => r.json() as Promise<any>).then((x) => { if (x.error) onSay(x.error); else { setD(x); onPending(x.flagged.length); } }).catch(() => {}); }, [onSay]);
   useEffect(load, [load]);
   const post = async (b: Record<string, unknown>) => { const r = await fetch("/api/admin", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) }); const x = (await r.json().catch(() => ({}))) as any; onSay(x.error || x.toast); load(); };
@@ -735,6 +737,20 @@ function AdminBox({ onSay, onPending }: { onSay: (t: string) => void; onPending:
     {d.accounts.map((a) => <p key={a.id}>{a.id === "gov" ? "🏛️" : "🏪"} {a.name} <b>¥{a.balance.toLocaleString()}</b></p>)}
     <p>👥 玩家 {d.players.n} 人，手上共 <b>¥{Math.round(d.players.money).toLocaleString()}</b></p>
     <p className="sub">全服货币总量 ¥{Math.round(total).toLocaleString()} · 管理员累计增发 ¥{d.minted.toLocaleString()}（另含开服储备 ¥10,000,000）</p>
+    <h2 style={{ marginTop: 8 }}>玩家（{d.playerList.length}）</h2>
+    <input id="admin-q" placeholder="搜索昵称、角色名或邮箱" value={q} onChange={(e) => setQ(e.target.value)} />
+    {d.playerList.filter((u) => !q || [u.name, u.cname, u.email].some((x) => x && x.toLowerCase().includes(q.toLowerCase()))).slice(0, 30).map((u) => (
+      <div key={u.id} style={{ borderBottom: "1px solid var(--line)", padding: "4px 0" }}>
+        <div data-no-i18n><b>{u.name}</b>{u.cname && u.cname !== u.name ? ` · ${u.cname}` : ""} <span className="sub">{u.email.startsWith("x:") ? "X" : u.email}</span></div>
+        <div className="row2"><span className="sub">{u.money != null ? `¥${Math.round(u.money).toLocaleString()}` : "没有存档"}</span>
+          {ask === u.id ? <><button className="btn ghost" onClick={() => setAsk(null)}>算了</button><button className="btn ghost" onClick={() => { setAsk(null); post({ op: "wipe_player", uid: u.id }); }}>只清存档</button><button className="btn primary" style={{ background: "var(--red)" }} onClick={() => { setAsk(null); post({ op: "wipe_player", uid: u.id, account: true }); }}>删账号</button></>
+            : <button className="link" onClick={() => setAsk(u.id)}>清除数据…</button>}</div>
+      </div>))}
+    <h2 style={{ marginTop: 8, color: "var(--red)" }}>清空全服</h2>
+    <p className="sub">清掉所有玩家的存档、钱、地、店、游船广告、订单记录和账本，市政府储备回到 ¥10,000,000。无法撤销（D1 Time Travel 可恢复 30 天内的数据）。</p>
+    <label className="pricerow"><input type="checkbox" style={{ width: "auto" }} checked={wipeAcc} onChange={(e) => setWipeAcc(e.target.checked)} />连玩家账号一起删除（管理员账号保留）</label>
+    <input id="admin-wipe" placeholder="输入“清空全部”确认" value={wipeTxt} onChange={(e) => setWipeTxt(e.target.value)} />
+    <button className="btn primary" style={{ background: "var(--red)" }} disabled={wipeTxt.trim() !== "清空全部"} onClick={() => { post({ op: "wipe_all", confirm: wipeTxt, accounts: wipeAcc }); setWipeTxt(""); }}>清空全服数据</button>
     <h2 style={{ marginTop: 8 }}>调整市政府储备</h2>
     <label className="pricerow">金额 ¥<input id="admin-amt" type="number" inputMode="numeric" style={{ width: "auto", flex: 1, minWidth: 140 }} value={amt} onChange={(e) => setAmt(Math.round(Number(e.target.value)))} /><span className="sub">= ¥{Math.abs(amt || 0).toLocaleString()}</span></label>
     <input id="admin-memo" value={memo} maxLength={40} onChange={(e) => setMemo(e.target.value)} placeholder="说明，比如：开新区增发" />

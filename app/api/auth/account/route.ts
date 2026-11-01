@@ -1,5 +1,5 @@
 // 账号管理：看资料、改昵称、改密码、退出所有设备、注销账号
-import { flow } from "../../../../lib/ledger";
+import { wipePlayer } from "../../../../lib/wipe";
 import { env, readCookie, userFromToken, SESSION_COOKIE, json, hashPassword, safeEqual, randomId, sessionCookie, isAdminUser } from "../../../../lib/auth";
 
 type Row = { id: string; email: string; name: string; pass_hash: string; pass_salt: string; x_id: string | null; created_at: number };
@@ -50,18 +50,7 @@ export async function POST(req: Request) {
   if (b.op === "delete") { // 注销：要输入“注销”和密码（X 账号只要输入“注销”）；名下的地、店、广告位全部放回
     if (String(b.confirm || "").trim() !== "注销") return json({ error: "请输入“注销”两个字确认" }, 400);
     if (r.pass_hash !== "!" && !(await passOk(b.password))) return json({ error: "密码不对" }, 400);
-    const save = await DB.prepare("SELECT json_extract(data, '$.money') AS m FROM saves WHERE user_id = ?").bind(user.id).first<{ m: number }>();
-    if (save?.m) await flow(DB, user.id, "gov", save.m, "注销账号，余额上缴");
-    await DB.batch([
-      DB.prepare("DELETE FROM estate_staff WHERE user_id = ? OR estate_id IN (SELECT id FROM estates WHERE owner = ?)").bind(user.id, user.id),
-      DB.prepare("DELETE FROM estates WHERE owner = ?").bind(user.id),
-      DB.prepare("DELETE FROM plots WHERE owner = ?").bind(user.id),
-      DB.prepare("UPDATE shops SET owner = NULL, owner_name = NULL, kind = NULL, name = NULL, price = NULL, till = 0, sold = 0, npc = 0, settled_at = NULL, opened_at = NULL WHERE owner = ?").bind(user.id),
-      DB.prepare("UPDATE boats SET owner = NULL, owner_name = NULL, image = NULL, mime = NULL, mosaic = NULL, caption = NULL, expires_at = NULL, hidden = 0, flagged = 0 WHERE owner = ?").bind(user.id),
-      DB.prepare("DELETE FROM saves WHERE user_id = ?").bind(user.id),
-      DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(user.id),
-      DB.prepare("DELETE FROM users WHERE id = ?").bind(user.id),
-    ]);
+    await wipePlayer(DB, user.id, "注销账号，余额上缴", true);
     return json({ toast: "账号已注销" }, 200, { "set-cookie": sessionCookie("", 0) });
   }
   return json({ error: "未知操作" }, 400);
