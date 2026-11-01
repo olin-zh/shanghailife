@@ -6,7 +6,7 @@ import { allParcels, parcelName, parcelOf, MAX_HOUSES } from "../lib/grid";
 import { AD_DAYS, AD_USD_CENTS, BOAT_COUNT, boatName, type Boat } from "../lib/boats";
 import { EKINDS, MAX_STAFF, SHIFT_MINS, WAGE_MAX, WAGE_MIN, estateName, estatePlace, estatePrice, perDay, type Estate, type EstateKind } from "../lib/estates";
 import { DEPOSIT, KINDS, SLOTS, npcPerHour, slotAt, type Shop, type ShopKind } from "../lib/shops";
-import { ENTRY_JOBS, START_GRANT, actsAt, homeOf, homePlace, isHome, HOMES, GIGS, gigHint, jobTitle, lvOf, nextLvXp, LV_XP, weeklyCost, GIFT_AMOUNTS, JOBS, NPCS, PLACES, act, clock, coopable, isState, mood, newGame, travel, trip, SKILLS, skillMax, skillPer, LICENSE_LV, skillLv, type SkillId, type JobId, type PlaceId, type State } from "../lib/game";
+import { ENTRY_JOBS, GENDERS, START_GRANT, ageOf, birthOk, type Gender, actsAt, homeOf, homePlace, isHome, HOMES, GIGS, gigHint, jobTitle, lvOf, nextLvXp, LV_XP, weeklyCost, GIFT_AMOUNTS, JOBS, NPCS, PLACES, act, clock, coopable, isState, mood, newGame, travel, trip, SKILLS, skillMax, skillPer, LICENSE_LV, skillLv, type SkillId, type JobId, type PlaceId, type State } from "../lib/game";
 
 type User = { id: string; email: string; name: string };
 type Chat = { id: string; name: string; at: PlaceId; text: string; ts: number };
@@ -223,16 +223,16 @@ export default function Game() {
 
       <section className="bottom">{s ? (
         <>
-          <div className="who"><b>{s.name} · {jobTitle(s)}</b><span className="money" style={{ color: s.money < 0 ? "var(--red)" : undefined }}>¥{s.money.toLocaleString()}</span></div>
+          <div className="who"><b>{s.name}{s.gender ? ` ${s.gender === "m" ? "♂" : s.gender === "f" ? "♀" : ""}` : ""}{s.birth ? ` ${ageOf(s.birth)}岁` : ""} · {jobTitle(s)}</b><span className="money" style={{ color: s.money < 0 ? "var(--red)" : undefined }}>¥{s.money.toLocaleString()}</span></div>
           <div className="career">
             <span>Lv{lvOf(s)}</span>
             <div className="bar"><i style={{ width: (nextLvXp(s) == null ? 100 : Math.min(100, (((s.xp || 0) - LV_XP[lvOf(s) - 1]) / (nextLvXp(s)! - LV_XP[lvOf(s) - 1])) * 100)) + "%" }} /></div>
             <span className="sub">{nextLvXp(s) == null ? "已到顶级" : `经验 ${s.xp || 0}/${nextLvXp(s)}`} · 每周开销¥{weeklyCost(s)}</span>
           </div>
           <div className="stats">{status.map(([l, v]) => <div className="st" key={l}>{l} {Math.round(v)}<div className="bar"><i className={v < 25 ? "low" : ""} style={{ width: v + "%" }} /></div></div>)}</div>
-          <div className="last">{s.log[0]?.[1]}</div>
+          {(!s.gender || !s.birth) ? <ProfileFix onSave={(g, b) => { if (user) api({ op: "profile", gender: g, birth: b }); else setS({ ...s, gender: g, birth: b }); }} /> : <div className="last">{s.log[0]?.[1]}</div>}
         </>
-      ) : <Start onStart={(n, j) => { if (user) api({ op: "new", name: n, job: j }); else setS(newGame(n, j)); setSel("hostel"); }} />}</section>
+      ) : <Start onStart={(n, j, g, b) => { if (user) api({ op: "new", name: n, job: j, gender: g, birth: b }); else setS(newGame(n, j, g, b)); setSel("hostel"); }} />}</section>
 
       {sel && (
         <aside className="sheet">
@@ -337,18 +337,35 @@ export default function Game() {
   );
 }
 
-function Start({ onStart }: { onStart: (name: string, job: JobId) => void }) {
+// 性别 + 出生日期：开局和补填资料共用
+function ProfileFields({ gender, birth, onGender, onBirth }: { gender: Gender | null; birth: string; onGender: (g: Gender) => void; onBirth: (b: string) => void }) {
+  return <div className="pricerow" style={{ margin: "6px 0" }}>
+    <span>性别</span>{(Object.keys(GENDERS) as Gender[]).map((g) => <button key={g} type="button" className="btn ghost" aria-pressed={gender === g} style={gender === g ? { borderColor: "var(--green)", color: "var(--green)", fontWeight: 700 } : undefined} onClick={() => onGender(g)}>{GENDERS[g]}</button>)}
+    <span style={{ marginLeft: 8 }}>出生日期</span><input id="birth" type="date" style={{ width: "auto" }} min="1926-01-01" max={new Date(Date.now() - 16 * 365.25 * 86400000).toISOString().slice(0, 10)} value={birth} onChange={(e) => onBirth(e.target.value)} />
+  </div>;
+}
+function ProfileFix({ onSave }: { onSave: (g: Gender, b: string) => void }) {
+  const [gender, setGender] = useState<Gender | null>(null);
+  const [birth, setBirth] = useState("");
+  return <div className="last"><b>补充一下资料：</b><ProfileFields gender={gender} birth={birth} onGender={setGender} onBirth={setBirth} />
+    <button className="btn primary" disabled={!gender || !birthOk(birth)} onClick={() => gender && onSave(gender, birth)}>保存</button></div>;
+}
+
+function Start({ onStart }: { onStart: (name: string, job: JobId, gender: Gender, birth: string) => void }) {
   const [name, setName] = useState("小张");
   const [job, setJob] = useState<JobId>(ENTRY_JOBS[0]);
+  const [gender, setGender] = useState<Gender | null>(null);
+  const [birth, setBirth] = useState("2000-01-01");
   return (
     <>
       <div style={{ fontWeight: 700, fontSize: 15 }}>刚到上海：领¥{START_GRANT.toLocaleString()}落户补贴，先住青年旅舍，找份工作。</div>
       <input id="nm" value={name} maxLength={12} onChange={(e) => setName(e.target.value)} aria-label="名字" />
+      <ProfileFields gender={gender} birth={birth} onGender={setGender} onBirth={setBirth} />
       <div className="jobs">{ENTRY_JOBS.map((k) => (
         <button key={k} aria-pressed={k === job} onClick={() => setJob(k)}>{JOBS[k].ic} {JOBS[k].title}<br /><span className="sub">日薪¥{JOBS[k].pay}</span></button>
       ))}</div>
       <p className="sub">好工作（咖啡师、销售、设计师、码农、算法工程师）要先练能力，再去那里应聘。</p>
-      <button className="big" onClick={() => onStart(name.trim() || "小张", job)}>开始过日脚</button>
+      <button className="big" disabled={!gender || !birthOk(birth)} onClick={() => gender && onStart(name.trim() || "小张", job, gender, birth)}>{!gender ? "先选性别" : !birthOk(birth) ? "出生日期不对（要年满 16 岁）" : "开始过日脚"}</button>
     </>
   );
 }

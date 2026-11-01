@@ -18,6 +18,8 @@ export type State = Stats & {
   sk?: Partial<Record<SkillId, number>>; // 各项能力的累计经验
   shiftDay?: number; // 最近一次在玩家店里打工的游戏日
   deposit?: number; // 租房押金（退租时退回）
+  gender?: Gender; // 性别
+  birth?: string; // 出生日期 YYYY-MM-DD
   taxPaid?: number; // 累计交的税
 };
 
@@ -247,10 +249,25 @@ const pad = (n: number) => String(n).padStart(2, "0");
 export const clock = (s: State) => `${pad(Math.floor(s.min / 60))}:${pad(s.min % 60)}`;
 export const stamp = (s: State) => `第${s.day}天 ${clock(s)}`;
 
+export type Gender = "m" | "f" | "x";
+export const GENDERS: Record<Gender, string> = { m: "男", f: "女", x: "不透露" };
+// 出生日期：合法日期，1926 年以后，至少 16 岁（来上海打工）
+export function birthOk(b: unknown): b is string {
+  if (typeof b !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(b)) return false;
+  const d = new Date(b + "T00:00:00Z"); if (isNaN(+d) || d.toISOString().slice(0, 10) !== b) return false;
+  return d.getUTCFullYear() >= 1926 && ageOf(b) >= 16;
+}
+export function ageOf(b: string, now = new Date()) {
+  const [y, m, d] = b.split("-").map(Number); let a = now.getFullYear() - y;
+  if (now.getMonth() + 1 < m || (now.getMonth() + 1 === m && now.getDate() < d)) a--;
+  return a;
+}
 export const START_GRANT = 5000; // 市政府发的落户补贴
-export function newGame(name: string, job: JobId): State {
+export function newGame(name: string, job: JobId, gender?: Gender, birth?: string): State {
   if (!ENTRY_JOBS.includes(job)) job = ENTRY_JOBS[0];
   const s: State = { v: 2, name, job, at: "hostel", home: "hostel", day: 1, min: 420, month: new Date().getMonth() + 1, money: START_GRANT, energy: 80, hunger: 70, fun: 60, social: 30, worked: {}, friends: {}, flags: {}, log: [] };
+  if (gender && GENDERS[gender]) s.gender = gender;
+  if (birthOk(birth)) s.birth = birth;
   log(s, `${name}拖着行李箱到了上海火车站，领到市政府的落户补贴¥${START_GRANT.toLocaleString()}，先在青年旅舍住下。找到了份工作：${JOBS[job].title}。`);
   return s;
 }

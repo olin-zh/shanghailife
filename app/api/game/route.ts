@@ -1,7 +1,7 @@
 // 登录玩家的所有游戏操作都在这里执行，客户端只拿结果。
 import { env, readCookie, userFromToken, SESSION_COOKIE, json } from "../../../lib/auth";
 import { mutate, loadSave } from "../../../lib/store";
-import { ENTRY_JOBS, JOBS, PLACES, START_GRANT, act, actsAt, buyPlot, isState, newGame, sellPlot, travel, type JobId, type PlaceId, type State } from "../../../lib/game";
+import { ENTRY_JOBS, GENDERS, JOBS, PLACES, START_GRANT, act, actsAt, birthOk, type Gender, buyPlot, isState, newGame, sellPlot, travel, type JobId, type PlaceId, type State } from "../../../lib/game";
 import { parcelOf, parcelName } from "../../../lib/grid";
 import { flow, settleOp } from "../../../lib/ledger";
 
@@ -9,7 +9,7 @@ type Out = { toast?: string; label?: string; error?: string };
 
 // 导入游客存档：只保留进度类信息，钱和日子重置，避免把本地改过的数据带进来
 function sanitize(x: State): State {
-  const s = newGame(String(x.name).slice(0, 12) || "小张", ENTRY_JOBS.includes(x.job) ? x.job : ENTRY_JOBS[0]);
+  const s = newGame(String(x.name).slice(0, 12) || "小张", ENTRY_JOBS.includes(x.job) ? x.job : ENTRY_JOBS[0], x.gender, x.birth);
   s.friends = Object.fromEntries(
     Object.entries(x.friends || {}).filter(([k]) => k.length < 10).map(([k, v]) => [k, Math.max(0, Math.min(100, Number(v) || 0))]),
   );
@@ -76,7 +76,15 @@ export async function POST(req: Request) {
       case "new": {
         if (s) return { state: s, out: { error: "已经有存档了" } };
         const job = (ENTRY_JOBS.includes(b.job as JobId) ? b.job : ENTRY_JOBS[0]) as JobId;
-        return { state: newGame(String(b.name || "").trim().slice(0, 12) || user.name, job), out: {} };
+        if (!(b.gender in GENDERS)) return { state: s, out: { error: "请选择性别" } };
+        if (!birthOk(b.birth)) return { state: s, out: { error: "出生日期不对（要年满 16 岁）" } };
+        return { state: newGame(String(b.name || "").trim().slice(0, 12) || user.name, job, b.gender as Gender, b.birth), out: {} };
+      }
+      case "profile": { // 老存档补填性别和出生日期
+        if (!s) return { state: s, out: { error: "还没开始游戏" } };
+        if (!(b.gender in GENDERS)) return { state: s, out: { error: "请选择性别" } };
+        if (!birthOk(b.birth)) return { state: s, out: { error: "出生日期不对（要年满 16 岁）" } };
+        return { state: { ...s, gender: b.gender as Gender, birth: b.birth }, out: { toast: "资料已保存" } };
       }
       case "import":
         if (s) return { state: s, out: { error: "已经有存档了" } };
@@ -111,6 +119,7 @@ export async function POST(req: Request) {
   if (r.out.error) return json({ error: r.out.error, state: r.state }, 400);
   // 记账：新开局领补贴；重开游戏余额上缴；其他操作和市场结算、交税
   if (b.op === "new" || b.op === "import") await flow(DB, "gov", user.id, START_GRANT, "落户补贴");
+  else if (b.op === "profile") { /* 不涉及钱 */ }
   else if (b.op === "reset") { if (before) await flow(DB, user.id, "gov", before.money, "重开游戏，余额上缴"); }
   else await settleOp(DB, user.id, before, r.state, b.op === "travel" ? `坐地铁去${PLACES[b.to as PlaceId]?.name ?? ""}` : (before && actsAt(before, before.at)[b.i]?.[0]) || r.out.label || "日常开销");
   return json({ state: r.state, ...r.out });
