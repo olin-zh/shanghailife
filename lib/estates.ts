@@ -1,7 +1,7 @@
 // 商业地块：买地 → 盖健身房 / 咖啡馆 / 超市 / 服装店 → 挂招牌 → 雇玩家来打工。
 // 规则前后端共用；谁买了、账上多少钱存在 estates 表。
 import { cellPos, parcelName, parcelOf, placeOfCell } from "./grid";
-import { PLACES, advance, apply, check, gainSkills, log, sBonus, type PlaceId, type SkillId, type State } from "./game";
+import { PLACES, advance, apply, check, earn, gainSkills, log, sBonus, type PlaceId, type SkillId, type State } from "./game";
 
 // 商业地块就是地图上的商业格子（编号 = 格子编号），谁买了才在 estates 表里有一行
 export const estatePrice = (id: number) => parcelOf(id)?.price ?? 0;
@@ -70,12 +70,12 @@ export function canShift(s: State) {
 }
 export function doShift(prev: State, e: { kind: EstateKind; name: string; wage: number; ownerName: string }) {
   const s = structuredClone(prev), k = EKINDS[e.kind];
-  s.shiftDay = s.day; s.money += e.wage;
+  s.shiftDay = s.day; const net = earn(s, e.wage);
   apply(s, { energy: -18 / (1 + sBonus(s, "fit")), hunger: -12, social: 6 }); advance(s, SHIFT_MINS);
-  log(s, `在${e.ownerName}的${k.name}「${e.name}」上了一班，拿到工资¥${e.wage}。`);
+  log(s, `在${e.ownerName}的${k.name}「${e.name}」上了一班，工资¥${e.wage}，扣税后¥${net}。`);
   gainSkills(s, { [k.staffSkill]: 1 });
   check(s);
-  return { state: s, toast: `下班了，工资¥${e.wage} 到手` };
+  return { state: s, toast: `下班了，到手¥${net}（已扣税）` };
 }
 // 这一班给店里带来的营业额：员工相关能力越高越多
 export const shiftRevenue = (staff: State, k: EstateKind) => Math.round(EKINDS[k].shift * (1 + sBonus(staff, EKINDS[k].staffSkill)));

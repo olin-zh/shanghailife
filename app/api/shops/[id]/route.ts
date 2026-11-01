@@ -1,6 +1,7 @@
 import { env, readCookie, userFromToken, SESSION_COOKIE, json } from "../../../../lib/auth";
 import { mutate, loadSave } from "../../../../lib/store";
-import { PLACES, sBonus } from "../../../../lib/game";
+import { PLACES, TAX, sBonus } from "../../../../lib/game";
+import { flow } from "../../../../lib/ledger";
 import { COST_RATE, DEPOSIT, KINDS, SLOTS, priceOk, settle, visitShop, type ShopKind } from "../../../../lib/shops";
 
 type Row = { owner: string | null; owner_name: string | null; kind: ShopKind | null; name: string | null; price: number | null; till: number; npc: number; settled_at: number | null };
@@ -47,6 +48,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       return { state: n, out: true };
     }).catch(() => null);
     if (!paid?.out) { await DB.prepare("UPDATE shops SET owner = NULL, owner_name = NULL, kind = NULL, name = NULL, price = NULL WHERE id = ? AND owner = ?").bind(id, user.id).run(); return json({ error: "押金不够，开店失败" }, 400); }
+    await flow(DB, user.id, "market", DEPOSIT, `开店押金「${name}」`);
     return json({ state: paid.state, toast: `「${name}」开张了！🎉` });
   }
 
@@ -65,6 +67,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       return x.state === s ? { state: s, out: false } : { state: x.state, out: true };
     });
     if (!res?.out) return json({ error: toast || "没买成", state: res?.state }, 400);
+    await flow(DB, user.id, "market", price, `在「${r.name}」消费`);
     await DB.prepare("UPDATE shops SET till = till + ?, sold = sold + 1 WHERE id = ? AND owner = ?").bind(price - KINDS[kind].ref * COST_RATE, id, r.owner).run();
     return json({ state: res.state, toast });
   }
@@ -77,7 +80,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
   if (b.op === "collect" || b.op === "close") {
     if (!here) return json({ error: `要到${placeName}店里才能${b.op === "close" ? "关店" : "收账"}` }, 400);
-    const till = Math.round(r.till), refund = b.op === "close" ? DEPOSIT / 2 : 0;
+    const till = Math.round(r.till), refund = b.op === "close" ? DEPOSIT / 2 : 0, tax = till > 0 ? Math.round(till * TAX) : 0;
     // 先清账（只有账没被别人动过才成功），再加到存档
     const cleared = b.op === "close"
       ? await DB.prepare("UPDATE shops SET owner = NULL, owner_name = NULL, kind = NULL, name = NULL, price = NULL, till = 0, sold = 0, npc = 0, settled_at = NULL, opened_at = NULL WHERE id = ? AND owner = ? AND settled_at = ?").bind(id, user.id, r.settled_at).run()
@@ -85,10 +88,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (cleared.meta.changes !== 1) return json({ error: "店里刚有客人，请再点一次" }, 409);
     const res = await mutate(DB, user.id, (s) => {
       if (!s) return null;
-      const n = structuredClone(s); n.money += till + refund;
+      const n = structuredClone(s); n.money += till - tax + refund; n.taxPaid = (n.taxPaid || 0) + tax;
       n.log.unshift([`第${n.day}天`, b.op === "close" ? `关掉了「${r.name}」，结清账目¥${till}，退回一半押金¥${refund}。` : `到「${r.name}」收账¥${till}。`]); n.log = n.log.slice(0, 40);
       return { state: n, out: true };
     });
+    await flow(DB, "market", user.id, till + refund, `「${r.name}」${b.op === "close" ? "关店结账" : "营业收入"}`);
+    if (tax) await flow(DB, user.id, "gov", tax, `经营所得税 · 「${r.name}」`);
     return json({ state: res?.state, toast: b.op === "close" ? `店关了，到手¥${till + refund}` : till >= 0 ? `收账¥${till} 💰` : `这段时间亏了¥${-till}，从侬钱包里补上了` });
   }
   return json({ error: "未知操作" }, 400);

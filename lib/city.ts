@@ -354,6 +354,9 @@ export function createCity(root: HTMLElement, onPick: (id: PlaceId) => void, onP
   for (let i = 0; i < 4; i++) { box(2.2, 2.2, 2, mats.grey, -46 + i * 2.6, 0, 29); box(2, 0.15, 1, [mats.yellow, mats.red][i % 2], -46 + i * 2.6, 1.4, 30.4); }
   for (let i = 0; i < 5; i++) tree(-47 + i * 2.4, 32.5, 0.7);
   shiftSince(m0, P.ykl.x - (-42), P.ykl.z - (30)); }
+  // 青年旅舍：火车站旁一栋五层小楼，楼顶招牌
+  { const { x, z } = P.hostel; plot(x, z, 7, 6, mats.stone); box(4.4, 5, 3.4, M(0xe9c44c), x, 0, z - 0.6); box(4.6, 0.3, 3.6, mats.dk, x, 5, z - 0.6);
+    for (let k = 0; k < 4; k++) box(3.6, 0.5, 0.06, mats.glass, x, 0.9 + k * 1.05, z + 1.12); box(3, 0.8, 0.15, mats.red, x, 5.3, z + 1.0); }
   // 轮渡
   const FERRY = { x: P.ferry.x, z: P.ferry.z };
   box(3, 0.4, 2, mats.wood, FERRY.x - 2.5, 0, FERRY.z); box(1.5, 1.2, 1.2, mats.white, FERRY.x - 2.5, 0.4, FERRY.z);

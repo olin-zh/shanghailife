@@ -3,6 +3,8 @@ import { env, readCookie, userFromToken, SESSION_COOKIE, json } from "../../../.
 import { mutate, loadSave } from "../../../../lib/store";
 import { PLACES, sBonus, type State } from "../../../../lib/game";
 import { parcelOf, validCell } from "../../../../lib/grid";
+import { flow, settleOp } from "../../../../lib/ledger";
+import { TAX } from "../../../../lib/game";
 import { EKINDS, MAX_ESTATES, MAX_STAFF, canShift, doShift, estateName, estatePlace, estatePrice, priceOk, settle, shiftRevenue, visitEstate, wageOk, type EstateKind } from "../../../../lib/estates";
 
 type Row = { owner: string | null; owner_name: string | null; kind: EstateKind | null; name: string | null; price: number | null; wage: number | null; openings: number; till: number; npc: number; settled_at: number | null };
@@ -54,6 +56,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (!claimed) return json({ error: "这块地刚被别人买走了" }, 409);
     const r = await pay(DB, user.id, -price, `买下${lot}，花了¥${price.toLocaleString()}。`);
     if (!r?.out) { await DB.prepare("DELETE FROM estates WHERE id = ? AND owner = ?").bind(id, user.id).run(); return json({ error: "钞票不够，没买成" }, 400); }
+    await flow(DB, user.id, "gov", price, `买地 ${lot}`);
     return json({ state: r.state, toast: `买下${lot}了！接下来盖点什么吧 🏗️` });
   }
 
@@ -76,6 +79,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (ok.meta.changes !== 1) return json({ error: "已经盖好了" }, 409);
     const p = await pay(DB, user.id, -cost, `在${lot}盖了一家${EKINDS[kind].name}「${name}」，花了¥${cost.toLocaleString()}。`);
     if (!p?.out) { await DB.prepare("UPDATE estates SET kind = NULL, name = NULL, price = NULL, settled_at = NULL WHERE id = ? AND owner = ?").bind(id, user.id).run(); return json({ error: "钞票不够，没盖成" }, 400); }
+    await flow(DB, user.id, "market", cost, `盖${EKINDS[kind].name} ${lot}`);
     return json({ state: p.state, toast: `「${name}」开张了！🎉 记得挂个招牌` });
   }
 
@@ -83,12 +87,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const d = await DB.prepare("DELETE FROM estate_staff WHERE user_id = ? AND estate_id = ?").bind(user.id, id).run();
     return d.meta.changes ? json({ toast: "辞职了" }) : json({ error: "侬不在这家打工" }, 400);
   }
-  if (b.op === "sell" && mine && !r.kind) { // 空地转卖，回收六成
+  if (b.op === "sell" && mine && !r.kind) { // 空地卖回市政府，回收七成
     const nh = needHere("卖地"); if (nh) return nh;
-    const refund = Math.round(estatePrice(id) * 0.6);
+    const refund = Math.round(estatePrice(id) * 0.7);
     const c = await DB.prepare("DELETE FROM estates WHERE id = ? AND owner = ? AND kind IS NULL").bind(id, user.id).run();
     if (c.meta.changes !== 1) return json({ error: "请再试一次" }, 409);
     const p = await pay(DB, user.id, refund, `把${lot}转卖了，回收¥${refund.toLocaleString()}。`);
+    await flow(DB, "gov", user.id, refund, `市政府回收 ${lot}`);
     return json({ state: p?.state, toast: `卖掉了，到手¥${refund.toLocaleString()}` });
   }
   if (!r.kind || !r.price) return json({ error: "这块地还没盖店" }, 400);
@@ -104,6 +109,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       return x.state === s ? { state: s, out: false } : { state: x.state, out: true };
     });
     if (!res?.out) return json({ error: toast || "没买成", state: res?.state }, 400);
+    await flow(DB, user.id, "market", r.price, `在「${r.name}」消费`);
     await DB.prepare("UPDATE estates SET till = till + ?, visits = visits + 1 WHERE id = ? AND owner = ?").bind(r.price - k.ref * 0.45, id, r.owner).run();
     return json({ state: res.state, toast });
   }
@@ -134,6 +140,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       const x = doShift(s, { kind: r.kind!, name: r.name!, wage, ownerName: r.owner_name! }); toast = x.toast; return { state: x.state, out: true };
     }).catch(() => null);
     if (!res?.out) { await DB.prepare("UPDATE estates SET till = till - ? + ? WHERE id = ?").bind(rev, wage, id).run(); return json({ error: "上班失败，请重试", state: res?.state }, 400); }
+    await settleOp(DB, user.id, save, res.state, `在「${r.name}」上班`);
     return json({ state: res.state, toast });
   }
 
@@ -158,8 +165,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
   if (b.op === "collect" || b.op === "sell") {
     const nh = needHere(b.op === "sell" ? "卖地" : "收账"); if (nh) return nh;
-    const till = Math.round(r.till);
-    const refund = b.op === "sell" ? Math.round(estatePrice(id) * 0.6 + k.build * 0.3) : 0;
+    const till = Math.round(r.till), tax = till > 0 ? Math.round(till * TAX) : 0;
+    const refund = b.op === "sell" ? Math.round(estatePrice(id) * 0.7 + k.build * 0.3) : 0;
     const cleared = b.op === "sell"
       ? await DB.prepare("DELETE FROM estates WHERE id = ? AND owner = ? AND settled_at = ?").bind(id, user.id, r.settled_at).run()
       : await DB.prepare("UPDATE estates SET till = till - ? WHERE id = ? AND owner = ? AND settled_at = ?").bind(r.till, id, user.id, r.settled_at).run();
@@ -167,11 +174,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (b.op === "sell") await DB.prepare("DELETE FROM estate_staff WHERE estate_id = ?").bind(id).run();
     const res = await mutate(DB, user.id, (s) => {
       if (!s) return null;
-      const n = structuredClone(s); n.money += till + refund;
+      const n = structuredClone(s); n.money += till - tax + refund; n.taxPaid = (n.taxPaid || 0) + tax;
       log(n, b.op === "sell" ? `把${lot}连店一起卖了，回收¥${refund.toLocaleString()}，结清账目¥${till}。` : `到「${r.name}」收账¥${till}。`);
       return { state: n, out: true };
     });
-    return json({ state: res?.state, toast: b.op === "sell" ? `卖掉了，到手¥${(till + refund).toLocaleString()}` : till >= 0 ? `收账¥${till} 💰` : `这段时间亏了¥${-till}，从侬钱包里补上了` });
+    await flow(DB, "market", user.id, till, `「${r.name}」营业收入`);
+    if (tax) await flow(DB, user.id, "gov", tax, `经营所得税 · 「${r.name}」`);
+    if (refund) await flow(DB, "gov", user.id, refund, `市政府回收 ${lot}`);
+    return json({ state: res?.state, toast: b.op === "sell" ? `卖掉了，到手¥${(till + refund).toLocaleString()}` : till >= 0 ? `收账¥${till}，扣税后¥${till - tax} 💰` : `这段时间亏了¥${-till}，从侬钱包里补上了` });
   }
   return json({ error: "未知操作" }, 400);
 }

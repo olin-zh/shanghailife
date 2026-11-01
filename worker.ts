@@ -3,6 +3,7 @@
 import nextHandler from "./.open-next/worker.js";
 import { DurableObject } from "cloudflare:workers";
 import { mutate, loadSave } from "./lib/store";
+import { flow, settleOp } from "./lib/ledger";
 import { coop, receiveGift, sendGift, ACTS, isHome, PLACES as ALL, type PlaceId, type State } from "./lib/game";
 
 type Env = { DB: D1Database; CITY: DurableObjectNamespace<CityRoom>; ASSETS: Fetcher };
@@ -122,6 +123,7 @@ export class CityRoom extends DurableObject<Env> {
           const back = await mutate(this.env.DB, o.from, (s) => (s ? { state: { ...s, money: s.money + amount }, out: true } : { state: s, out: false }));
           this.sendTo(o.from, { t: "state", state: back?.state, toast: "对方还没开始游戏，红包退回了" }); return;
         }
+        await flow(this.env.DB, o.from, o.to, amount, `红包 ${o.fromName} → ${o.toName}`);
         this.sendTo(o.from, { t: "state", state: paid.state, toast: `红包已送给${o.toName} 🧧` });
         this.sendTo(o.to, { t: "state", state: got.state, toast: `收到${o.fromName}的红包 ¥${amount} 🧧` });
       } else {
@@ -131,7 +133,9 @@ export class CityRoom extends DurableObject<Env> {
         if (!okFor(a.state) || !okFor(b.state)) { this.sendTo(o.from, { t: "notice", text: "没法一起做：有人钱不够或已经离开" }); this.sendTo(o.to, { t: "notice", text: "没法一起做：有人钱不够或已经离开" }); return; }
         for (const [uid, pid, pname] of [[o.from, o.to, o.toName], [o.to, o.from, o.fromName]] as const) {
           let toast: string | undefined;
+          const pre = (await loadSave(this.env.DB, uid)).state;
           const r = await mutate(this.env.DB, uid, (s) => { if (!okFor(s)) return { state: s, out: false }; const x = coop(s!, o.i!, pid, pname); toast = x.toast; return { state: x.state, out: true }; });
+          if (r?.out) await settleOp(this.env.DB, uid, pre, r.state, `和${pname}一起${o.label}`);
           this.sendTo(uid, { t: "state", state: r?.state, toast: toast || `和${pname}一起行动！` });
         }
         this.broadcast({ t: "act", id: o.from, label: `和${o.toName}一起${o.label}` });

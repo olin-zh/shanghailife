@@ -1,5 +1,6 @@
 import { env, readCookie, userFromToken, SESSION_COOKIE, json } from "../../../../lib/auth";
 import { mutate } from "../../../../lib/store";
+import { flow } from "../../../../lib/ledger";
 import { AD_DAYS, AD_MAX_BYTES, AD_MAX_PER_PLAYER, AD_PRICE, BOAT_COUNT, boatName, sniffImage } from "../../../../lib/boats";
 
 const admins = (e: any) => String(e.ADMIN_EMAILS || "").split(",").map((s: string) => s.trim().toLowerCase()).filter(Boolean);
@@ -47,6 +48,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     await e.DB.prepare("UPDATE boats SET owner = NULL, owner_name = NULL, image = NULL, mime = NULL, caption = NULL, expires_at = NULL WHERE id = ? AND owner = ?").bind(id, user.id).run();
     return json({ error: err || "租船失败", state: paid?.state }, 400);
   }
+  await flow(e.DB, user.id, "gov", AD_PRICE, `租${boatName(id)}打广告`);
   return json({ ok: true, state: paid.state, toast: `广告挂上${boatName(id)}了，能挂 ${AD_DAYS} 天 🚢` });
 }
 
